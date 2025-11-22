@@ -192,7 +192,9 @@ unsigned long adjustmentCooldown = 300000; // 5 minutes between adjustments (ms)
 1. In **Blynk app**, tap the **"Learn IR"** button (V7)
 2. Watch the **Serial Monitor** for instructions
 3. When prompted, press these buttons on your **pellet stove remote**:
-   - **POWER** button (point remote at VS1838B receiver)
+   - **POWER ON** button (point remote at VS1838B receiver)
+   - Wait for confirmation ✓
+   - **POWER OFF** button
    - Wait for confirmation ✓
    - **HEAT UP** button
    - Wait for confirmation ✓
@@ -202,17 +204,19 @@ unsigned long adjustmentCooldown = 300000; // 5 minutes between adjustments (ms)
 4. Serial Monitor will display captured codes:
    ```
    === IR CODES SAVED ===
-   Power: 0x1234ABCD
-   Heat Up: 0x5678EF01
-   Heat Down: 0x9ABC2345
+   Power ON: 0x1234ABCD
+   Power OFF: 0x5678EF01
+   Heat Up: 0x9ABC2345
+   Heat Down: 0xDEF67890
    Learning mode complete!
    ```
 
 5. **Optional:** Copy these codes and paste them in the sketch for permanent storage:
    ```cpp
-   uint64_t irCode_Power = 0x1234ABCD;
-   uint64_t irCode_HeatUp = 0x5678EF01;
-   uint64_t irCode_HeatDown = 0x9ABC2345;
+   uint64_t irCode_PowerOn = 0x1234ABCD;
+   uint64_t irCode_PowerOff = 0x5678EF01;
+   uint64_t irCode_HeatUp = 0x9ABC2345;
+   uint64_t irCode_HeatDown = 0xDEF67890;
    ```
 
 ### Step 3: Test Manual Control

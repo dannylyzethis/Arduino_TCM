@@ -54,14 +54,15 @@ unsigned long lastAdjustmentTime = 0;
 unsigned long adjustmentCooldown = 300000; // 5 minutes between auto adjustments (300000 ms)
 
 // IR code storage (you'll capture these from your stove remote)
-uint64_t irCode_Power = 0;          // Store your stove's power button code
+uint64_t irCode_PowerOn = 0;        // Store your stove's power ON button code
+uint64_t irCode_PowerOff = 0;       // Store your stove's power OFF button code
 uint64_t irCode_HeatUp = 0;         // Store heat increase code
 uint64_t irCode_HeatDown = 0;       // Store heat decrease code
 decode_type_t irProtocol = UNKNOWN; // Will be detected when learning
 
 // Learning mode
 bool learningMode = false;
-int learningStep = 0;  // 0=Power, 1=HeatUp, 2=HeatDown
+int learningStep = 0;  // 0=PowerOn, 1=PowerOff, 2=HeatUp, 3=HeatDown
 
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
@@ -81,7 +82,7 @@ void sendIRCommand(uint64_t code) {
 // Manual stove power ON
 void turnStoveOn() {
   if (!stoveIsOn) {
-    sendIRCommand(irCode_Power);
+    sendIRCommand(irCode_PowerOn);
     stoveIsOn = true;
     currentHeatLevel = 3; // Start at medium heat
 
@@ -95,7 +96,7 @@ void turnStoveOn() {
 // Manual stove power OFF
 void turnStoveOff() {
   if (stoveIsOn) {
-    sendIRCommand(irCode_Power);
+    sendIRCommand(irCode_PowerOff);
     stoveIsOn = false;
     currentHeatLevel = 0;
 
@@ -169,22 +170,29 @@ void checkForIRSignal() {
     if (results.value != 0xFFFFFFFFFFFFFFFF) { // Ignore repeat codes
       switch(learningStep) {
         case 0:
-          irCode_Power = results.value;
+          irCode_PowerOn = results.value;
           irProtocol = results.decode_type;
-          Serial.println("✓ Power button learned! Now press HEAT UP on your remote...");
+          Serial.println("✓ Power ON learned! Now press POWER OFF on your remote...");
           learningStep = 1;
           break;
         case 1:
-          irCode_HeatUp = results.value;
-          Serial.println("✓ Heat Up learned! Now press HEAT DOWN on your remote...");
+          irCode_PowerOff = results.value;
+          Serial.println("✓ Power OFF learned! Now press HEAT UP on your remote...");
           learningStep = 2;
           break;
         case 2:
+          irCode_HeatUp = results.value;
+          Serial.println("✓ Heat Up learned! Now press HEAT DOWN on your remote...");
+          learningStep = 3;
+          break;
+        case 3:
           irCode_HeatDown = results.value;
           Serial.println("✓ Heat Down learned! All codes captured!");
           Serial.println("\n=== IR CODES SAVED ===");
-          Serial.print("Power: 0x");
-          Serial.println(uint64ToString(irCode_Power, HEX));
+          Serial.print("Power ON: 0x");
+          Serial.println(uint64ToString(irCode_PowerOn, HEX));
+          Serial.print("Power OFF: 0x");
+          Serial.println(uint64ToString(irCode_PowerOff, HEX));
           Serial.print("Heat Up: 0x");
           Serial.println(uint64ToString(irCode_HeatUp, HEX));
           Serial.print("Heat Down: 0x");
@@ -363,7 +371,7 @@ BLYNK_WRITE(LEARN_MODE_VPIN) {
     learningStep = 0;
     Serial.println("\n=== IR LEARNING MODE ===");
     Serial.println("Point your pellet stove remote at the IR receiver");
-    Serial.println("Press the POWER button on your remote now...");
+    Serial.println("Press the POWER ON button on your remote now...");
     irrecv.enableIRIn(); // Start the receiver
   }
 }
