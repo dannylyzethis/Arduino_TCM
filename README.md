@@ -6,10 +6,11 @@ Automated pellet stove control system using ESP32 with DHT11 temperature/humidit
 
 ✅ **Temperature & Humidity Monitoring** - Real-time DHT11 sensor readings
 ✅ **IR Learning** - Capture commands from your pellet stove's remote
-✅ **Automatic Climate Control** - Turn stove on/off based on temperature setpoint
-✅ **Manual Control** - Remote stove operation via Blynk app
-✅ **Smart Hysteresis** - Prevents rapid on/off cycling (±2°F buffer)
-✅ **Real-time Status** - Monitor stove state and temperature from anywhere
+✅ **PID-Style Heat Control** - Automatically adjusts heat level (1-5) based on temperature
+✅ **Manual Control** - Remote stove on/off and heat adjustment via Blynk app
+✅ **Smart Heat Adjustment** - Uses 5 heat levels instead of on/off cycling
+✅ **Cooldown Period** - 5-minute intervals between auto adjustments
+✅ **Real-time Status** - Monitor stove state, heat level, and temperature from anywhere
 
 ## Hardware Requirements
 
@@ -109,22 +110,30 @@ Configure these virtual pins in your Blynk template:
 |-----|------|------|-------|---------|
 | **V0** | Temperature | Value | 32-120°F | Current temperature display |
 | **V2** | Humidity | Value | 0-100% | Current humidity display |
-| **V3** | Stove Power | Button | 0-1 | Manual power on/off |
-| **V4** | Stove Status | Value | 0-1 | Stove state (on/off) |
+| **V3** | Stove ON | Button | 0-1 | Turn stove on |
+| **V4** | Stove OFF | Button | 0-1 | Turn stove off |
 | **V5** | Target Temp | Slider | 60-80°F | Temperature setpoint |
-| **V6** | Auto Mode | Switch | 0-1 | Enable automation |
+| **V6** | Auto Mode | Switch | 0-1 | Enable heat auto-adjustment |
 | **V7** | Learn IR | Button | 0-1 | Enter learning mode |
+| **V8** | Heat UP | Button | 0-1 | Manual heat increase |
+| **V9** | Heat DOWN | Button | 0-1 | Manual heat decrease |
+| **V10** | Heat Level | Value | 0-5 | Current heat level display |
+| **V11** | Stove Status | LED/Value | 0-1 | Stove on/off indicator |
 
 ### 3. Add Dashboard Widgets
 
 **Recommended Dashboard Layout:**
-- **Gauge** widget → V0 (Temperature)
-- **Gauge** widget → V2 (Humidity)
-- **Button** widget → V3 (Stove Power - Manual)
-- **LED** widget → V4 (Stove Status)
+- **Gauge** widget → V0 (Temperature in °F)
+- **Gauge** widget → V2 (Humidity %)
+- **Button** widget → V3 (Stove ON)
+- **Button** widget → V4 (Stove OFF)
 - **Slider** widget → V5 (Target Temperature: 60-80°F)
 - **Switch** widget → V6 (Auto Mode)
 - **Button** widget → V7 (Learn IR Codes)
+- **Button** widget → V8 (Heat UP ↑)
+- **Button** widget → V9 (Heat DOWN ↓)
+- **Value Display** widget → V10 (Heat Level: 0-5)
+- **LED** widget → V11 (Stove Status: On/Off)
 
 ## Configuration
 
@@ -153,14 +162,17 @@ char pass[] = "YOUR_WIFI_PASSWORD";
 ### Set Temperature Preferences
 
 ```cpp
-float tempSetpoint = 70.0;      // Default target temperature (°F)
-float tempHysteresis = 2.0;     // Temperature buffer (prevents flickering)
+float tempSetpoint = 70.0;          // Default target temperature (°F)
+float tempHysteresis = 2.0;         // Temperature buffer for heat adjustments
+unsigned long adjustmentCooldown = 300000; // 5 minutes between adjustments (ms)
 ```
 
-**How Hysteresis Works:**
-- Stove turns **ON** when temp drops below `setpoint - 2°F` (e.g., 68°F)
-- Stove turns **OFF** when temp rises above `setpoint + 2°F` (e.g., 72°F)
-- Prevents constant on/off cycling
+**How PID-Style Control Works:**
+- Stove stays **ON** (you control on/off manually)
+- Heat level **increases** when temp < `setpoint - 2°F` (e.g., < 68°F)
+- Heat level **decreases** when temp > `setpoint + 2°F` (e.g., > 72°F)
+- Adjustments happen every 5 minutes (prevents excessive commands)
+- Heat levels range from 1 (minimum) to 5 (maximum)
 
 ## Installation & Setup
 
@@ -205,59 +217,84 @@ float tempHysteresis = 2.0;     // Temperature buffer (prevents flickering)
 
 ### Step 3: Test Manual Control
 
-1. In Blynk app, tap **"Stove Power"** button (V3)
-2. Watch your pellet stove respond
-3. Check **Stove Status** LED (V4) updates
-4. Test multiple times to ensure reliability
+1. In Blynk app, tap **"Stove ON"** button (V3)
+2. Watch your pellet stove turn on (starts at heat level 3)
+3. Check **Stove Status** LED (V11) turns on
+4. Check **Heat Level** display (V10) shows "3"
+5. Test **Heat UP** (V8) and **Heat DOWN** (V9) buttons
+6. Verify heat level changes (should range 1-5)
+7. Test **"Stove OFF"** button (V4) to turn off
 
-### Step 4: Enable Automation
+### Step 4: Enable Heat Automation
 
-1. Set desired **Target Temperature** using slider (V5) - e.g., 70°F
-2. Enable **Auto Mode** switch (V6)
-3. System will now automatically:
-   - Turn stove **ON** when temp < 68°F
-   - Turn stove **OFF** when temp > 72°F
+1. **Turn stove ON** manually using V3 button
+2. Set desired **Target Temperature** using slider (V5) - e.g., 70°F
+3. Enable **Auto Mode** switch (V6)
+4. System will now automatically adjust heat level every 5 minutes:
+   - **Increase heat** when temp < 68°F (up to level 5)
+   - **Decrease heat** when temp > 72°F (down to level 1)
+   - **Maintain** heat level when temp is 68-72°F
 
 ## Usage
 
-### Manual Mode
-- Use **Stove Power** button in Blynk to control stove
-- Monitor temperature and humidity in real-time
-- Override automation at any time
+### Manual Mode (Default)
+- Use **Stove ON** (V3) and **Stove OFF** (V4) buttons to control power
+- Use **Heat UP** (V8) and **Heat DOWN** (V9) to manually adjust heat (1-5)
+- Monitor temperature, humidity, and current heat level in real-time
+- Full manual control without any automation
 
-### Auto Mode
-- Set target temperature with slider
-- Enable Auto Mode switch
-- System maintains temperature automatically
-- Can still use manual controls (auto mode temporarily pauses)
+### Auto Mode (Smart Heat Adjustment)
+1. **Turn stove ON** manually first (V3)
+2. Set target temperature with slider (V5)
+3. Enable Auto Mode switch (V6)
+4. System automatically adjusts heat level every 5 minutes:
+   - Too cold → Increases heat (up to level 5)
+   - Too hot → Decreases heat (down to level 1)
+   - Just right → Maintains current heat level
+5. Can still manually adjust heat or turn off stove anytime
+6. Auto mode disables when you turn stove OFF
 
 ### Monitoring
 - **Temperature** updates every 2 minutes
 - **Humidity** updates every 2 minutes
-- **Stove status** shows current state (On/Off)
-- Serial Monitor provides detailed logs
+- **Heat level** (1-5) displays current setting
+- **Stove status** LED shows on/off state
+- Serial Monitor provides detailed automation logs
 
 ## How It Works
 
-### Temperature Control Logic
+### PID-Style Heat Level Control
+
+Unlike simple on/off thermostats, this system uses **proportional control** by adjusting heat levels:
 
 ```
-Current Temp < Target - 2°F  →  Turn stove ON
-Current Temp > Target + 2°F  →  Turn stove OFF
-Otherwise                    →  No change (maintain state)
+Current Temp < Target - 2°F  →  Increase heat level (1→2→3→4→5)
+Current Temp > Target + 2°F  →  Decrease heat level (5→4→3→2→1)
+Within ±2°F of target       →  Maintain current heat level
 ```
 
 **Example (Target = 70°F):**
-- Room at 67°F → Stove turns **ON**
-- Room heats to 72°F → Stove turns **OFF**
-- Room cools to 68°F → Stove turns **ON** again
+- Room at 65°F, Heat Level 2 → **Increases to Level 3** (5 min later)
+- Room at 67°F, Heat Level 3 → **Increases to Level 4** (5 min later)
+- Room at 69°F, Heat Level 4 → **Maintains Level 4** (in range)
+- Room reaches 72°F → **Decreases to Level 3** (5 min later)
+- System continuously adjusts to maintain comfort
+
+**Why This is Better:**
+- Pellet stoves are designed for continuous operation, not on/off cycling
+- Smoother temperature control without temperature swings
+- More efficient fuel usage
+- Extends stove lifespan (less wear from start/stop cycles)
 
 ### Safety Features
 
+- **Manual on/off control** - You control when stove turns on/off (not automated)
 - **Sensor failure detection** - Alerts if DHT11 stops responding
-- **IR code validation** - Won't send if codes not learned
-- **Manual override** - Can disable automation anytime
-- **Hysteresis buffer** - Prevents rapid cycling
+- **IR code validation** - Won't send commands if codes not learned
+- **Heat level limits** - Won't exceed min (1) or max (5) settings
+- **Adjustment cooldown** - 5-minute intervals prevent command spam
+- **Manual override** - Can disable auto mode or adjust heat anytime
+- **Auto-disable on OFF** - Auto mode turns off when stove is manually shut off
 
 ## Troubleshooting
 
@@ -317,16 +354,21 @@ Otherwise                    →  No change (maintain state)
 - ✓ Ensure virtual pins match datastream configuration
 - ✓ Check Blynk server status at [status.blynk.cc](https://status.blynk.cc)
 
-### Automation Not Triggering
+### Automation Not Adjusting Heat
 
-**Symptom:** Auto mode enabled but stove doesn't turn on/off
+**Symptom:** Auto mode enabled but heat level doesn't change
 
 **Solutions:**
-- ✓ Verify IR codes were learned successfully
-- ✓ Check temperature is outside hysteresis range
+- ✓ **Stove must be ON** - Auto mode only works when stove is running
+- ✓ Verify IR codes were learned successfully (Power, Heat Up, Heat Down)
+- ✓ Check temperature is outside hysteresis range (±2°F)
+- ✓ Wait 5 minutes - adjustments have cooldown period
 - ✓ Ensure Auto Mode switch (V6) is ON
 - ✓ Monitor Serial output for automation messages
-- ✓ Manually test stove power button first
+- ✓ Check Heat Level display (V10) - should be 1-5
+- ✓ Manually test Heat UP/DOWN buttons first
+- ✓ If at max heat (5) and still cold, system won't increase further
+- ✓ If at min heat (1) and still hot, system won't decrease further
 
 ## Advanced Customization
 
@@ -340,17 +382,26 @@ timer.setInterval(120000L, sendData);
 timer.setInterval(60000L, sendData);
 ```
 
-### Adjust Hysteresis
+### Adjust Temperature Control Parameters
 
 ```cpp
-// Default: ±2°F buffer
+// Default: ±2°F buffer before adjusting heat
 float tempHysteresis = 2.0;
 
-// Tighter control (±1°F):
+// Tighter control (±1°F) - more frequent adjustments:
 float tempHysteresis = 1.0;
 
-// Wider buffer (±3°F):
+// Wider buffer (±3°F) - less frequent adjustments:
 float tempHysteresis = 3.0;
+
+// Adjustment cooldown (default: 5 minutes)
+unsigned long adjustmentCooldown = 300000; // milliseconds
+
+// More responsive (3 minutes):
+unsigned long adjustmentCooldown = 180000;
+
+// More conservative (10 minutes):
+unsigned long adjustmentCooldown = 600000;
 ```
 
 ### Add More IR Commands
@@ -431,4 +482,4 @@ For issues or questions:
 
 **Built with:** ESP32 | DHT11 | VS1838B | IR LED | Blynk IoT
 **Author:** Arduino TCM Project
-**Version:** 2.0 (with IR automation)
+**Version:** 2.1 (PID-style heat level control)
