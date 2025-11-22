@@ -50,6 +50,16 @@ void setup() {
   Serial.println("\n=== Remote Temperature Sensor ===");
   Serial.println("Zone 2 - ESP-NOW Transmitter");
 
+  // Check if MAC address has been configured
+  if (mainControllerMAC[0] == 0xFF && mainControllerMAC[1] == 0xFF &&
+      mainControllerMAC[2] == 0xFF && mainControllerMAC[3] == 0xFF &&
+      mainControllerMAC[4] == 0xFF && mainControllerMAC[5] == 0xFF) {
+    Serial.println("\n*** ERROR: DEFAULT MAC ADDRESS DETECTED! ***");
+    Serial.println("You MUST update 'mainControllerMAC' with your main controller's MAC address!");
+    Serial.println("The system will continue but ESP-NOW will not work.");
+    Serial.println("***********************************************\n");
+  }
+
   // Initialize DHT sensor
   dht.begin();
   Serial.println("✓ DHT11 sensor initialized");
@@ -58,11 +68,21 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
+
+  // Add timeout for WiFi connection (30 seconds)
+  int wifiTimeout = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiTimeout < 60) {
     delay(500);
     Serial.print(".");
+    wifiTimeout++;
   }
-  Serial.println("\n✓ WiFi connected");
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n✓ WiFi connected");
+  } else {
+    Serial.println("\n⚠ WiFi connection timeout!");
+    Serial.println("ESP-NOW will still work on same WiFi channel");
+  }
 
   // Print MAC address (needed for main controller setup)
   Serial.print("This device's MAC Address: ");
@@ -71,8 +91,10 @@ void setup() {
 
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
+    Serial.println("ERROR: ESP-NOW initialization failed!");
+    Serial.println("System cannot function without ESP-NOW. Restarting in 10 seconds...");
+    delay(10000);
+    ESP.restart();
   }
   Serial.println("✓ ESP-NOW initialized");
 
@@ -85,10 +107,12 @@ void setup() {
   peerInfo.encrypt = false;
 
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add peer - check MAC address!");
-    return;
+    Serial.println("ERROR: Failed to add peer!");
+    Serial.println("Please verify the main controller MAC address is correct.");
+    Serial.println("System will retry, but data may not be received...");
+  } else {
+    Serial.println("✓ Main controller added as peer");
   }
-  Serial.println("✓ Main controller added as peer");
 
   // Sensor ID (useful if you have multiple remote sensors)
   sensorData.sensorID = 1;  // Change to 2, 3, etc. for additional sensors

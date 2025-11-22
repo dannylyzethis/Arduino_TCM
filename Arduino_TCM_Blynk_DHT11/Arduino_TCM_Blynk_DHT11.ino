@@ -142,6 +142,16 @@ void loadIRCodes() {
 
 // ESP-NOW callback when data is received from remote sensor
 void onDataReceive(const uint8_t * mac, const uint8_t *incomingDataPtr, int len) {
+  // Validate data size to prevent memory corruption
+  if (len != sizeof(incomingData)) {
+    Serial.print("ERROR: Received invalid ESP-NOW packet size: ");
+    Serial.print(len);
+    Serial.print(" bytes (expected ");
+    Serial.print(sizeof(incomingData));
+    Serial.println(" bytes)");
+    return;
+  }
+
   memcpy(&incomingData, incomingDataPtr, sizeof(incomingData));
 
   remoteTemp = incomingData.temperature;
@@ -480,6 +490,15 @@ BLYNK_WRITE(AUTO_MODE_VPIN) {
   Serial.println(autoMode ? "ENABLED" : "DISABLED");
 
   if (autoMode) {
+    // Check if IR codes have been learned
+    if (irCode_HeatUp == 0 || irCode_HeatDown == 0) {
+      Serial.println("ERROR: Cannot enable auto mode - IR codes not learned!");
+      Serial.println("Please use Learning Mode (V7) to capture IR codes first.");
+      autoMode = false;
+      Blynk.virtualWrite(AUTO_MODE_VPIN, 0);
+      return;
+    }
+
     if (stoveIsOn) {
       Serial.println("System will automatically adjust heat level based on temperature");
       lastAdjustmentTime = millis() - adjustmentCooldown; // Allow immediate first adjustment
@@ -494,6 +513,18 @@ BLYNK_WRITE(AUTO_MODE_VPIN) {
 // Blynk: Adjustment cooldown slider
 BLYNK_WRITE(COOLDOWN_VPIN) {
   int cooldownMinutes = param.asInt();
+
+  // Validate cooldown range (5-30 minutes)
+  if (cooldownMinutes < 5) {
+    Serial.println("WARNING: Cooldown too short, setting to minimum (5 minutes)");
+    cooldownMinutes = 5;
+    Blynk.virtualWrite(COOLDOWN_VPIN, 5);
+  } else if (cooldownMinutes > 30) {
+    Serial.println("WARNING: Cooldown too long, setting to maximum (30 minutes)");
+    cooldownMinutes = 30;
+    Blynk.virtualWrite(COOLDOWN_VPIN, 30);
+  }
+
   adjustmentCooldown = cooldownMinutes * 60000UL; // Convert minutes to milliseconds
   Serial.print("Adjustment cooldown set to: ");
   Serial.print(cooldownMinutes);
@@ -531,7 +562,18 @@ BLYNK_WRITE(HEAT_SYNC_VPIN) {
 
 // Blynk: Zone selector
 BLYNK_WRITE(ZONE_SELECT_VPIN) {
-  activeZone = param.asInt();
+  int newZone = param.asInt();
+
+  // Validate zone selection (must be 0, 1, or 2)
+  if (newZone < 0 || newZone > 2) {
+    Serial.print("ERROR: Invalid zone selection: ");
+    Serial.print(newZone);
+    Serial.println(" - Using Zone 1 (Local)");
+    newZone = 0;
+    Blynk.virtualWrite(ZONE_SELECT_VPIN, 0); // Reset to valid value
+  }
+
+  activeZone = newZone;
 
   const char* zoneNames[] = {"Zone 1 (Stove Room)", "Zone 2 (Remote)", "Average of Both"};
   Serial.print("Active zone changed to: ");
@@ -579,13 +621,15 @@ void setup() {
   // Load saved IR codes from flash memory
   loadIRCodes();
 
+  // Set WiFi mode BEFORE Blynk initialization for ESP-NOW compatibility
+  WiFi.mode(WIFI_AP_STA); // Enable both AP and Station mode for ESP-NOW
+
   // Connect to Blynk
   Serial.println("Connecting to WiFi and Blynk...");
   Blynk.begin(auth, ssid, pass);
   Serial.println("✓ Connected to Blynk");
 
   // Initialize ESP-NOW for multi-zone temperature
-  WiFi.mode(WIFI_AP_STA); // Enable both AP and Station mode for ESP-NOW
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
