@@ -7,6 +7,7 @@
 #include <IRsend.h>
 #include <IRrecv.h>
 #include <IRutils.h>
+#include <Preferences.h>
 
 // Define DHT11 pin and type
 #define DHTPIN 4        // GPIO4
@@ -36,6 +37,7 @@ char pass[] = "jennyjenny92";
 #define HEAT_LEVEL_VPIN V10     // Current heat level display (1-5)
 #define STOVE_STATUS_VPIN V11   // Stove status (On/Off)
 #define COOLDOWN_VPIN V12       // Adjustment cooldown period (minutes)
+#define HEAT_SYNC_VPIN V13      // Manual heat level sync (1-5)
 
 // Initialize components
 DHT dht(DHTPIN, DHTTYPE);
@@ -43,6 +45,7 @@ IRsend irsend(IR_SEND_PIN);
 IRrecv irrecv(IR_RECV_PIN);
 decode_results results;
 BlynkTimer timer;
+Preferences preferences;
 
 // Stove control variables
 bool stoveIsOn = false;
@@ -53,6 +56,8 @@ float currentTemp = 0.0;
 float tempHysteresis = 2.0;         // Temperature buffer for adjustment trigger
 unsigned long lastAdjustmentTime = 0;
 unsigned long adjustmentCooldown = 900000; // 15 minutes between auto adjustments (900000 ms)
+int sensorFailCount = 0;            // Track consecutive sensor failures
+const int MAX_SENSOR_FAILS = 3;     // Disable auto mode after this many failures
 
 // IR code storage (you'll capture these from your stove remote)
 uint64_t irCode_PowerOn = 0;        // Store your stove's power ON button code
@@ -78,6 +83,41 @@ void sendIRCommand(uint64_t code) {
   // Send the code (adjust protocol if needed - NEC is common)
   irsend.sendNEC(code, 32);
   delay(100); // Small delay after sending
+}
+
+// Save IR codes to EEPROM/Flash
+void saveIRCodes() {
+  preferences.begin("stove", false);  // false = read/write mode
+  preferences.putULong64("powerOn", irCode_PowerOn);
+  preferences.putULong64("powerOff", irCode_PowerOff);
+  preferences.putULong64("heatUp", irCode_HeatUp);
+  preferences.putULong64("heatDown", irCode_HeatDown);
+  preferences.end();
+  Serial.println("IR codes saved to flash memory");
+}
+
+// Load IR codes from EEPROM/Flash
+void loadIRCodes() {
+  preferences.begin("stove", true);  // true = read-only mode
+  irCode_PowerOn = preferences.getULong64("powerOn", 0);
+  irCode_PowerOff = preferences.getULong64("powerOff", 0);
+  irCode_HeatUp = preferences.getULong64("heatUp", 0);
+  irCode_HeatDown = preferences.getULong64("heatDown", 0);
+  preferences.end();
+
+  if (irCode_PowerOn != 0 && irCode_PowerOff != 0) {
+    Serial.println("✓ IR codes loaded from flash memory");
+    Serial.print("  Power ON: 0x");
+    Serial.println(uint64ToString(irCode_PowerOn, HEX));
+    Serial.print("  Power OFF: 0x");
+    Serial.println(uint64ToString(irCode_PowerOff, HEX));
+    Serial.print("  Heat UP: 0x");
+    Serial.println(uint64ToString(irCode_HeatUp, HEX));
+    Serial.print("  Heat DOWN: 0x");
+    Serial.println(uint64ToString(irCode_HeatDown, HEX));
+  } else {
+    Serial.println("No saved IR codes found - please use learning mode");
+  }
 }
 
 // Manual stove power ON
@@ -198,6 +238,10 @@ void checkForIRSignal() {
           Serial.println(uint64ToString(irCode_HeatUp, HEX));
           Serial.print("Heat Down: 0x");
           Serial.println(uint64ToString(irCode_HeatDown, HEX));
+
+          // Save codes to flash memory
+          saveIRCodes();
+
           Serial.println("Learning mode complete!");
           learningMode = false;
           learningStep = 0;
@@ -271,10 +315,24 @@ void sendData() {
 
   // Check if readings failed
   if (isnan(h) || isnan(t)) {
-    Serial.println("Failed to read from DHT sensor!");
+    sensorFailCount++;
+    Serial.print("Failed to read from DHT sensor! (Fail count: ");
+    Serial.print(sensorFailCount);
+    Serial.print("/");
+    Serial.print(MAX_SENSOR_FAILS);
+    Serial.println(")");
+
+    // Disable auto mode if sensor fails too many times
+    if (sensorFailCount >= MAX_SENSOR_FAILS && autoMode) {
+      Serial.println("CRITICAL: Sensor failed multiple times - disabling auto mode for safety");
+      autoMode = false;
+      Blynk.virtualWrite(AUTO_MODE_VPIN, 0);
+    }
     return;
   }
 
+  // Reset fail counter on successful read
+  sensorFailCount = 0;
   currentTemp = f; // Store current temperature for automation
 
   // Send data to Blynk app
@@ -373,6 +431,35 @@ BLYNK_WRITE(COOLDOWN_VPIN) {
   Serial.println(" minutes");
 }
 
+// Blynk: Manual heat level sync
+BLYNK_WRITE(HEAT_SYNC_VPIN) {
+  int syncLevel = param.asInt();
+
+  // Validate heat level is in range 0-5
+  if (syncLevel < 0) syncLevel = 0;
+  if (syncLevel > 5) syncLevel = 5;
+
+  currentHeatLevel = syncLevel;
+  Serial.print("Heat level manually synced to: ");
+  Serial.println(currentHeatLevel);
+
+  // Update display
+  Blynk.virtualWrite(HEAT_LEVEL_VPIN, currentHeatLevel);
+
+  // If syncing to 0, assume stove is off
+  if (currentHeatLevel == 0 && stoveIsOn) {
+    stoveIsOn = false;
+    Blynk.virtualWrite(STOVE_STATUS_VPIN, 0);
+    Serial.println("Stove marked as OFF (heat level 0)");
+  }
+  // If syncing to 1-5, assume stove is on
+  else if (currentHeatLevel > 0 && !stoveIsOn) {
+    stoveIsOn = true;
+    Blynk.virtualWrite(STOVE_STATUS_VPIN, 1);
+    Serial.println("Stove marked as ON");
+  }
+}
+
 // Blynk: IR Learning mode button
 BLYNK_WRITE(LEARN_MODE_VPIN) {
   int buttonState = param.asInt();
@@ -404,6 +491,9 @@ void setup() {
   Serial.println("✓ IR transmitter initialized on GPIO15");
   Serial.println("✓ IR receiver initialized on GPIO14");
 
+  // Load saved IR codes from flash memory
+  loadIRCodes();
+
   // Connect to Blynk
   Serial.println("Connecting to WiFi and Blynk...");
   Blynk.begin(auth, ssid, pass);
@@ -434,6 +524,7 @@ void setup() {
   Serial.println("- V10: View current heat level (1-5)");
   Serial.println("- V11: View stove status");
   Serial.println("- V12: Adjust cooldown period (5-30 minutes)");
+  Serial.println("- V13: Sync actual heat level (0-5)");
   Serial.println("\nAuto mode adjusts heat level based on temperature");
   Serial.print("Default cooldown: ");
   Serial.print(adjustmentCooldown / 60000);

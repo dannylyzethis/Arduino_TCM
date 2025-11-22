@@ -11,6 +11,9 @@ Automated pellet stove control system using ESP32 with DHT11 temperature/humidit
 ✅ **Smart Heat Adjustment** - Uses 5 heat levels instead of on/off cycling
 ✅ **Adjustable Cooldown** - User-configurable interval (5-30 min) between auto adjustments
 ✅ **Real-time Status** - Monitor stove state, heat level, and temperature from anywhere
+✅ **Persistent Storage** - IR codes saved to flash memory (survive reboots)
+✅ **Sensor Protection** - Auto-disables if temperature sensor fails
+✅ **Heat Level Sync** - Manually sync software state with actual stove level
 
 ## Hardware Requirements
 
@@ -120,6 +123,7 @@ Configure these virtual pins in your Blynk template:
 | **V10** | Heat Level | Value | 0-5 | Current heat level display |
 | **V11** | Stove Status | LED/Value | 0-1 | Stove on/off indicator |
 | **V12** | Cooldown Period | Slider | 5-30 min | Auto adjustment interval |
+| **V13** | Heat Sync | Slider | 0-5 | Manual heat level sync |
 
 ### 3. Add Dashboard Widgets
 
@@ -136,6 +140,7 @@ Configure these virtual pins in your Blynk template:
 - **Value Display** widget → V10 (Heat Level: 0-5)
 - **LED** widget → V11 (Stove Status: On/Off)
 - **Slider** widget → V12 (Cooldown Period: 5-30 minutes)
+- **Slider** widget → V13 (Heat Level Sync: 0-5)
 
 ## Configuration
 
@@ -214,13 +219,12 @@ unsigned long adjustmentCooldown = 900000; // 15 minutes between adjustments (ms
    Learning mode complete!
    ```
 
-5. **Optional:** Copy these codes and paste them in the sketch for permanent storage:
-   ```cpp
-   uint64_t irCode_PowerOn = 0x1234ABCD;
-   uint64_t irCode_PowerOff = 0x5678EF01;
-   uint64_t irCode_HeatUp = 0x9ABC2345;
-   uint64_t irCode_HeatDown = 0xDEF67890;
-   ```
+5. **Codes are automatically saved to flash memory!**
+   - IR codes persist through power cycles and reboots
+   - No need to re-learn codes after restarting
+   - Codes are loaded automatically on startup
+
+**Note:** If you want to re-learn codes, just press the "Learn IR" button again - new codes will overwrite the old ones.
 
 ### Step 3: Test Manual Control
 
@@ -242,6 +246,20 @@ unsigned long adjustmentCooldown = 900000; // 15 minutes between adjustments (ms
    - **Increase heat** when temp < 68°F (up to level 5)
    - **Decrease heat** when temp > 72°F (down to level 1)
    - **Maintain** heat level when temp is 68-72°F
+
+### Step 5: Sync Heat Level (If Needed)
+
+If the system's heat level gets out of sync with your actual stove (e.g., after a reboot or manual remote changes):
+
+1. Check your stove's actual heat level (look at the display)
+2. Use **Heat Sync slider** (V13) to set the correct level (0-5)
+3. System now knows the true stove state
+4. Auto mode will work correctly from this point
+
+**When to use:**
+- After ESP32 reboots while stove is running
+- If you manually changed heat using the physical remote
+- If an IR command failed and states are mismatched
 
 ## Usage
 
@@ -299,12 +317,13 @@ Within ±2°F of target       →  Maintain current heat level
 ### Safety Features
 
 - **Manual on/off control** - You control when stove turns on/off (not automated)
-- **Sensor failure detection** - Alerts if DHT11 stops responding
+- **Sensor failure protection** - Auto mode disables after 3 consecutive sensor failures
 - **IR code validation** - Won't send commands if codes not learned
 - **Heat level limits** - Won't exceed min (1) or max (5) settings
 - **Adjustable cooldown** - User-configurable intervals (5-30 min) prevent command spam
 - **Manual override** - Can disable auto mode or adjust heat anytime
 - **Auto-disable on OFF** - Auto mode turns off when stove is manually shut off
+- **Persistent storage** - IR codes survive power outages and reboots
 
 ## Troubleshooting
 
