@@ -9,7 +9,7 @@ Automated pellet stove control system using ESP32 with DHT11 temperature/humidit
 ✅ **PID-Style Heat Control** - Automatically adjusts heat level (1-5) based on temperature
 ✅ **Manual Control** - Remote stove on/off and heat adjustment via Blynk app
 ✅ **Smart Heat Adjustment** - Uses 5 heat levels instead of on/off cycling
-✅ **Cooldown Period** - 5-minute intervals between auto adjustments
+✅ **Adjustable Cooldown** - User-configurable interval (5-30 min) between auto adjustments
 ✅ **Real-time Status** - Monitor stove state, heat level, and temperature from anywhere
 
 ## Hardware Requirements
@@ -119,6 +119,7 @@ Configure these virtual pins in your Blynk template:
 | **V9** | Heat DOWN | Button | 0-1 | Manual heat decrease |
 | **V10** | Heat Level | Value | 0-5 | Current heat level display |
 | **V11** | Stove Status | LED/Value | 0-1 | Stove on/off indicator |
+| **V12** | Cooldown Period | Slider | 5-30 min | Auto adjustment interval |
 
 ### 3. Add Dashboard Widgets
 
@@ -134,6 +135,7 @@ Configure these virtual pins in your Blynk template:
 - **Button** widget → V9 (Heat DOWN ↓)
 - **Value Display** widget → V10 (Heat Level: 0-5)
 - **LED** widget → V11 (Stove Status: On/Off)
+- **Slider** widget → V12 (Cooldown Period: 5-30 minutes)
 
 ## Configuration
 
@@ -164,14 +166,15 @@ char pass[] = "YOUR_WIFI_PASSWORD";
 ```cpp
 float tempSetpoint = 70.0;          // Default target temperature (°F)
 float tempHysteresis = 2.0;         // Temperature buffer for heat adjustments
-unsigned long adjustmentCooldown = 300000; // 5 minutes between adjustments (ms)
+unsigned long adjustmentCooldown = 900000; // 15 minutes between adjustments (ms)
 ```
 
 **How PID-Style Control Works:**
 - Stove stays **ON** (you control on/off manually)
 - Heat level **increases** when temp < `setpoint - 2°F` (e.g., < 68°F)
 - Heat level **decreases** when temp > `setpoint + 2°F` (e.g., > 72°F)
-- Adjustments happen every 5 minutes (prevents excessive commands)
+- Adjustments happen at configurable intervals (default: 15 minutes)
+- Cooldown period can be adjusted via Blynk slider (5-30 minutes)
 - Heat levels range from 1 (minimum) to 5 (maximum)
 
 ## Installation & Setup
@@ -233,8 +236,9 @@ unsigned long adjustmentCooldown = 300000; // 5 minutes between adjustments (ms)
 
 1. **Turn stove ON** manually using V3 button
 2. Set desired **Target Temperature** using slider (V5) - e.g., 70°F
-3. Enable **Auto Mode** switch (V6)
-4. System will now automatically adjust heat level every 5 minutes:
+3. **Optional:** Adjust **Cooldown Period** slider (V12) - default is 15 minutes
+4. Enable **Auto Mode** switch (V6)
+5. System will automatically adjust heat level at your chosen interval:
    - **Increase heat** when temp < 68°F (up to level 5)
    - **Decrease heat** when temp > 72°F (down to level 1)
    - **Maintain** heat level when temp is 68-72°F
@@ -250,13 +254,15 @@ unsigned long adjustmentCooldown = 300000; // 5 minutes between adjustments (ms)
 ### Auto Mode (Smart Heat Adjustment)
 1. **Turn stove ON** manually first (V3)
 2. Set target temperature with slider (V5)
-3. Enable Auto Mode switch (V6)
-4. System automatically adjusts heat level every 5 minutes:
+3. Adjust cooldown period with slider (V12) - default 15 min, range 5-30 min
+4. Enable Auto Mode switch (V6)
+5. System automatically adjusts heat level at your chosen interval:
    - Too cold → Increases heat (up to level 5)
    - Too hot → Decreases heat (down to level 1)
    - Just right → Maintains current heat level
-5. Can still manually adjust heat or turn off stove anytime
-6. Auto mode disables when you turn stove OFF
+6. Can adjust cooldown period anytime (even while auto mode is running)
+7. Can still manually adjust heat or turn off stove anytime
+8. Auto mode disables when you turn stove OFF
 
 ### Monitoring
 - **Temperature** updates every 2 minutes
@@ -277,11 +283,11 @@ Current Temp > Target + 2°F  →  Decrease heat level (5→4→3→2→1)
 Within ±2°F of target       →  Maintain current heat level
 ```
 
-**Example (Target = 70°F):**
-- Room at 65°F, Heat Level 2 → **Increases to Level 3** (5 min later)
-- Room at 67°F, Heat Level 3 → **Increases to Level 4** (5 min later)
+**Example (Target = 70°F, Cooldown = 15 min):**
+- Room at 65°F, Heat Level 2 → **Increases to Level 3** (15 min later)
+- Room at 67°F, Heat Level 3 → **Increases to Level 4** (15 min later)
 - Room at 69°F, Heat Level 4 → **Maintains Level 4** (in range)
-- Room reaches 72°F → **Decreases to Level 3** (5 min later)
+- Room reaches 72°F → **Decreases to Level 3** (15 min later)
 - System continuously adjusts to maintain comfort
 
 **Why This is Better:**
@@ -296,7 +302,7 @@ Within ±2°F of target       →  Maintain current heat level
 - **Sensor failure detection** - Alerts if DHT11 stops responding
 - **IR code validation** - Won't send commands if codes not learned
 - **Heat level limits** - Won't exceed min (1) or max (5) settings
-- **Adjustment cooldown** - 5-minute intervals prevent command spam
+- **Adjustable cooldown** - User-configurable intervals (5-30 min) prevent command spam
 - **Manual override** - Can disable auto mode or adjust heat anytime
 - **Auto-disable on OFF** - Auto mode turns off when stove is manually shut off
 
@@ -366,7 +372,8 @@ Within ±2°F of target       →  Maintain current heat level
 - ✓ **Stove must be ON** - Auto mode only works when stove is running
 - ✓ Verify IR codes were learned successfully (Power, Heat Up, Heat Down)
 - ✓ Check temperature is outside hysteresis range (±2°F)
-- ✓ Wait 5 minutes - adjustments have cooldown period
+- ✓ **Wait for cooldown period** - default is 15 minutes between adjustments
+- ✓ Check Cooldown Period slider (V12) - may be set too high
 - ✓ Ensure Auto Mode switch (V6) is ON
 - ✓ Monitor Serial output for automation messages
 - ✓ Check Heat Level display (V10) - should be 1-5
@@ -398,15 +405,17 @@ float tempHysteresis = 1.0;
 // Wider buffer (±3°F) - less frequent adjustments:
 float tempHysteresis = 3.0;
 
-// Adjustment cooldown (default: 5 minutes)
-unsigned long adjustmentCooldown = 300000; // milliseconds
+// Adjustment cooldown (default: 15 minutes)
+unsigned long adjustmentCooldown = 900000; // milliseconds
 
-// More responsive (3 minutes):
-unsigned long adjustmentCooldown = 180000;
-
-// More conservative (10 minutes):
-unsigned long adjustmentCooldown = 600000;
+// Note: Cooldown can also be adjusted via Blynk slider (V12)
+// Range: 5-30 minutes (300000-1800000 ms)
 ```
+
+**Recommended Cooldown Settings:**
+- **5-10 minutes** - Quick response, smaller spaces, well-insulated
+- **15 minutes** - Default, balanced for most pellet stoves
+- **20-30 minutes** - Conservative, larger spaces, slow-response stoves
 
 ### Add More IR Commands
 

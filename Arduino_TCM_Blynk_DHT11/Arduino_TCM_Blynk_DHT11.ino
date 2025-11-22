@@ -35,6 +35,7 @@ char pass[] = "jennyjenny92";
 #define MANUAL_HEAT_DOWN_VPIN V9 // Manual heat down button
 #define HEAT_LEVEL_VPIN V10     // Current heat level display (1-5)
 #define STOVE_STATUS_VPIN V11   // Stove status (On/Off)
+#define COOLDOWN_VPIN V12       // Adjustment cooldown period (minutes)
 
 // Initialize components
 DHT dht(DHTPIN, DHTTYPE);
@@ -51,7 +52,7 @@ float tempSetpoint = 70.0;          // Default target temperature in °F
 float currentTemp = 0.0;
 float tempHysteresis = 2.0;         // Temperature buffer for adjustment trigger
 unsigned long lastAdjustmentTime = 0;
-unsigned long adjustmentCooldown = 300000; // 5 minutes between auto adjustments (300000 ms)
+unsigned long adjustmentCooldown = 900000; // 15 minutes between auto adjustments (900000 ms)
 
 // IR code storage (you'll capture these from your stove remote)
 uint64_t irCode_PowerOn = 0;        // Store your stove's power ON button code
@@ -363,6 +364,15 @@ BLYNK_WRITE(AUTO_MODE_VPIN) {
   }
 }
 
+// Blynk: Adjustment cooldown slider
+BLYNK_WRITE(COOLDOWN_VPIN) {
+  int cooldownMinutes = param.asInt();
+  adjustmentCooldown = cooldownMinutes * 60000UL; // Convert minutes to milliseconds
+  Serial.print("Adjustment cooldown set to: ");
+  Serial.print(cooldownMinutes);
+  Serial.println(" minutes");
+}
+
 // Blynk: IR Learning mode button
 BLYNK_WRITE(LEARN_MODE_VPIN) {
   int buttonState = param.asInt();
@@ -410,6 +420,7 @@ void setup() {
   Blynk.virtualWrite(HEAT_LEVEL_VPIN, currentHeatLevel);
   Blynk.virtualWrite(TEMP_SETPOINT_VPIN, tempSetpoint);
   Blynk.virtualWrite(AUTO_MODE_VPIN, autoMode ? 1 : 0);
+  Blynk.virtualWrite(COOLDOWN_VPIN, adjustmentCooldown / 60000); // Send in minutes
 
   Serial.println("\n=== System Ready ===");
   Serial.println("Use Blynk app to:");
@@ -422,7 +433,11 @@ void setup() {
   Serial.println("- V9: Manual heat DOWN");
   Serial.println("- V10: View current heat level (1-5)");
   Serial.println("- V11: View stove status");
-  Serial.println("\nAuto mode adjusts heat level every 5 minutes based on temperature");
+  Serial.println("- V12: Adjust cooldown period (5-30 minutes)");
+  Serial.println("\nAuto mode adjusts heat level based on temperature");
+  Serial.print("Default cooldown: ");
+  Serial.print(adjustmentCooldown / 60000);
+  Serial.println(" minutes");
   Serial.println();
 }
 
