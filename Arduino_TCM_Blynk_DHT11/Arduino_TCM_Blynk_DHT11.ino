@@ -10,6 +10,7 @@
 #include <Preferences.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <RCSwitch.h>
 
 // Define DHT11 pin and type
 #define DHTPIN 4        // GPIO4
@@ -18,6 +19,10 @@
 // Define IR pins
 #define IR_RECV_PIN 14  // GPIO14 for IR receiver (VS1838B)
 #define IR_SEND_PIN 15  // GPIO15 for IR LED transmitter
+
+// Define RF pins
+#define RF_TRANSMIT_PIN 16  // GPIO16 for 433MHz RF transmitter
+#define RF_RECEIVE_PIN 17   // GPIO17 for 433MHz RF receiver (optional)
 
 // Blynk Auth Token
 char auth[] = "39B95_5S2gbtY8hGCdPOEz4XOiyVqlpz";
@@ -43,11 +48,37 @@ char pass[] = "jennyjenny92";
 #define ZONE_SELECT_VPIN V14    // Zone selector (0=Zone1, 1=Zone2, 2=Average)
 #define REMOTE_TEMP_VPIN V15    // Remote zone temperature display
 
+// Ceiling Fan Virtual Pins (V16-V28)
+// Fan 1 Controls
+#define FAN1_OFF_VPIN V16       // Fan 1 OFF button
+#define FAN1_LOW_VPIN V17       // Fan 1 LOW speed
+#define FAN1_MED_VPIN V18       // Fan 1 MEDIUM speed
+#define FAN1_HIGH_VPIN V19      // Fan 1 HIGH speed
+#define FAN1_LIGHT_VPIN V20     // Fan 1 Light toggle
+
+// Fan 2 Controls
+#define FAN2_OFF_VPIN V21       // Fan 2 OFF button
+#define FAN2_LOW_VPIN V22       // Fan 2 LOW speed
+#define FAN2_MED_VPIN V23       // Fan 2 MEDIUM speed
+#define FAN2_HIGH_VPIN V24      // Fan 2 HIGH speed
+#define FAN2_LIGHT_VPIN V25     // Fan 2 Light toggle
+
+// Fan 3 Controls
+#define FAN3_OFF_VPIN V26       // Fan 3 OFF button
+#define FAN3_LOW_VPIN V27       // Fan 3 LOW speed
+#define FAN3_MED_VPIN V28       // Fan 3 MEDIUM speed
+#define FAN3_HIGH_VPIN V29      // Fan 3 HIGH speed
+#define FAN3_LIGHT_VPIN V30     // Fan 3 Light toggle
+
+// RF Learning Mode
+#define RF_LEARN_MODE_VPIN V31  // RF Learning mode button
+
 // Initialize components
 DHT dht(DHTPIN, DHTTYPE);
 IRsend irsend(IR_SEND_PIN);
 IRrecv irrecv(IR_RECV_PIN);
 decode_results results;
+RCSwitch rfSwitch = RCSwitch();
 BlynkTimer timer;
 Preferences preferences;
 
@@ -89,6 +120,33 @@ decode_type_t irProtocol = UNKNOWN; // Will be detected when learning
 // Learning mode
 bool learningMode = false;
 int learningStep = 0;  // 0=PowerOn, 1=PowerOff, 2=HeatUp, 3=HeatDown
+
+// RF code storage for ceiling fans (433MHz)
+// Fan 1 codes
+unsigned long fan1_Off = 0;
+unsigned long fan1_Low = 0;
+unsigned long fan1_Med = 0;
+unsigned long fan1_High = 0;
+unsigned long fan1_Light = 0;
+
+// Fan 2 codes
+unsigned long fan2_Off = 0;
+unsigned long fan2_Low = 0;
+unsigned long fan2_Med = 0;
+unsigned long fan2_High = 0;
+unsigned long fan2_Light = 0;
+
+// Fan 3 codes
+unsigned long fan3_Off = 0;
+unsigned long fan3_Low = 0;
+unsigned long fan3_Med = 0;
+unsigned long fan3_High = 0;
+unsigned long fan3_Light = 0;
+
+// RF Learning mode
+bool rfLearningMode = false;
+int rfLearningStep = 0;  // 0-4: Fan1 codes, 5-9: Fan2 codes, 10-14: Fan3 codes
+int rfBitLength = 24;    // Default bit length (will be detected)
 
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
@@ -137,6 +195,95 @@ void loadIRCodes() {
     Serial.println(uint64ToString(irCode_HeatDown, HEX));
   } else {
     Serial.println("No saved IR codes found - please use learning mode");
+  }
+}
+
+// Function to send RF command
+void sendRFCommand(unsigned long code, int bitLength) {
+  if (code == 0) {
+    Serial.println("Error: RF code not set. Please learn codes first!");
+    return;
+  }
+
+  Serial.print("Sending RF code: ");
+  Serial.print(code);
+  Serial.print(" (");
+  Serial.print(bitLength);
+  Serial.println(" bits)");
+
+  rfSwitch.send(code, bitLength);
+  delay(100); // Small delay after sending
+}
+
+// Save RF codes to EEPROM/Flash
+void saveRFCodes() {
+  preferences.begin("fans", false);  // false = read/write mode
+
+  // Fan 1 codes
+  preferences.putULong("fan1_off", fan1_Off);
+  preferences.putULong("fan1_low", fan1_Low);
+  preferences.putULong("fan1_med", fan1_Med);
+  preferences.putULong("fan1_high", fan1_High);
+  preferences.putULong("fan1_light", fan1_Light);
+
+  // Fan 2 codes
+  preferences.putULong("fan2_off", fan2_Off);
+  preferences.putULong("fan2_low", fan2_Low);
+  preferences.putULong("fan2_med", fan2_Med);
+  preferences.putULong("fan2_high", fan2_High);
+  preferences.putULong("fan2_light", fan2_Light);
+
+  // Fan 3 codes
+  preferences.putULong("fan3_off", fan3_Off);
+  preferences.putULong("fan3_low", fan3_Low);
+  preferences.putULong("fan3_med", fan3_Med);
+  preferences.putULong("fan3_high", fan3_High);
+  preferences.putULong("fan3_light", fan3_Light);
+
+  // Save bit length
+  preferences.putInt("rfBitLen", rfBitLength);
+
+  preferences.end();
+  Serial.println("RF codes saved to flash memory");
+}
+
+// Load RF codes from EEPROM/Flash
+void loadRFCodes() {
+  preferences.begin("fans", true);  // true = read-only mode
+
+  // Fan 1 codes
+  fan1_Off = preferences.getULong("fan1_off", 0);
+  fan1_Low = preferences.getULong("fan1_low", 0);
+  fan1_Med = preferences.getULong("fan1_med", 0);
+  fan1_High = preferences.getULong("fan1_high", 0);
+  fan1_Light = preferences.getULong("fan1_light", 0);
+
+  // Fan 2 codes
+  fan2_Off = preferences.getULong("fan2_off", 0);
+  fan2_Low = preferences.getULong("fan2_low", 0);
+  fan2_Med = preferences.getULong("fan2_med", 0);
+  fan2_High = preferences.getULong("fan2_high", 0);
+  fan2_Light = preferences.getULong("fan2_light", 0);
+
+  // Fan 3 codes
+  fan3_Off = preferences.getULong("fan3_off", 0);
+  fan3_Low = preferences.getULong("fan3_low", 0);
+  fan3_Med = preferences.getULong("fan3_med", 0);
+  fan3_High = preferences.getULong("fan3_high", 0);
+  fan3_Light = preferences.getULong("fan3_light", 0);
+
+  // Load bit length
+  rfBitLength = preferences.getInt("rfBitLen", 24);
+
+  preferences.end();
+
+  if (fan1_Off != 0) {
+    Serial.println("✓ RF codes loaded from flash memory");
+    Serial.print("  Bit length: ");
+    Serial.println(rfBitLength);
+    Serial.println("  Fan codes loaded for 3 fans");
+  } else {
+    Serial.println("No saved RF codes found - please use RF learning mode");
   }
 }
 
@@ -327,6 +474,85 @@ void checkForIRSignal() {
     }
 
     irrecv.resume(); // Ready for next signal
+  }
+}
+
+// RF Learning function
+void checkForRFSignal() {
+  if (!rfLearningMode) return;
+
+  if (rfSwitch.available()) {
+    unsigned long code = rfSwitch.getReceivedValue();
+    int bitLen = rfSwitch.getReceivedBitlength();
+
+    if (code != 0) {
+      Serial.println("RF Signal Received!");
+      Serial.print("Code: ");
+      Serial.print(code);
+      Serial.print(" (");
+      Serial.print(bitLen);
+      Serial.println(" bits)");
+
+      // Store bit length from first code
+      if (rfLearningStep == 0) {
+        rfBitLength = bitLen;
+      }
+
+      // Store the code based on learning step
+      const char* stepNames[] = {
+        "Fan 1 OFF", "Fan 1 LOW", "Fan 1 MED", "Fan 1 HIGH", "Fan 1 LIGHT",
+        "Fan 2 OFF", "Fan 2 LOW", "Fan 2 MED", "Fan 2 HIGH", "Fan 2 LIGHT",
+        "Fan 3 OFF", "Fan 3 LOW", "Fan 3 MED", "Fan 3 HIGH", "Fan 3 LIGHT"
+      };
+
+      switch(rfLearningStep) {
+        // Fan 1 codes
+        case 0: fan1_Off = code; break;
+        case 1: fan1_Low = code; break;
+        case 2: fan1_Med = code; break;
+        case 3: fan1_High = code; break;
+        case 4: fan1_Light = code; break;
+        // Fan 2 codes
+        case 5: fan2_Off = code; break;
+        case 6: fan2_Low = code; break;
+        case 7: fan2_Med = code; break;
+        case 8: fan2_High = code; break;
+        case 9: fan2_Light = code; break;
+        // Fan 3 codes
+        case 10: fan3_Off = code; break;
+        case 11: fan3_Low = code; break;
+        case 12: fan3_Med = code; break;
+        case 13: fan3_High = code; break;
+        case 14: fan3_Light = code; break;
+      }
+
+      Serial.print("✓ ");
+      Serial.print(stepNames[rfLearningStep]);
+      Serial.println(" learned!");
+
+      rfLearningStep++;
+
+      if (rfLearningStep < 15) {
+        Serial.print("Now press ");
+        Serial.print(stepNames[rfLearningStep]);
+        Serial.println(" on your remote...");
+      } else {
+        Serial.println("\n=== ALL RF CODES LEARNED! ===");
+        Serial.print("Bit length: ");
+        Serial.println(rfBitLength);
+        Serial.println("All 3 fan codes captured!");
+
+        // Save codes to flash memory
+        saveRFCodes();
+
+        Serial.println("RF Learning mode complete!");
+        rfLearningMode = false;
+        rfLearningStep = 0;
+        Blynk.virtualWrite(RF_LEARN_MODE_VPIN, 0);
+      }
+    }
+
+    rfSwitch.resetAvailable();
   }
 }
 
@@ -600,12 +826,134 @@ BLYNK_WRITE(LEARN_MODE_VPIN) {
   }
 }
 
+// Blynk: RF Learning mode button
+BLYNK_WRITE(RF_LEARN_MODE_VPIN) {
+  int buttonState = param.asInt();
+  if (buttonState == 1) {
+    rfLearningMode = true;
+    rfLearningStep = 0;
+    Serial.println("\n=== RF LEARNING MODE ===");
+    Serial.println("Point your ceiling fan remote #1 at the RF receiver");
+    Serial.println("Press the OFF button on Fan 1 remote now...");
+    rfSwitch.enableReceive(digitalPinToInterrupt(RF_RECEIVE_PIN));
+  }
+}
+
+// Fan 1 Controls
+BLYNK_WRITE(FAN1_OFF_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan1_Off, rfBitLength);
+    Serial.println("Fan 1: OFF");
+  }
+}
+
+BLYNK_WRITE(FAN1_LOW_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan1_Low, rfBitLength);
+    Serial.println("Fan 1: LOW speed");
+  }
+}
+
+BLYNK_WRITE(FAN1_MED_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan1_Med, rfBitLength);
+    Serial.println("Fan 1: MEDIUM speed");
+  }
+}
+
+BLYNK_WRITE(FAN1_HIGH_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan1_High, rfBitLength);
+    Serial.println("Fan 1: HIGH speed");
+  }
+}
+
+BLYNK_WRITE(FAN1_LIGHT_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan1_Light, rfBitLength);
+    Serial.println("Fan 1: Light toggled");
+  }
+}
+
+// Fan 2 Controls
+BLYNK_WRITE(FAN2_OFF_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan2_Off, rfBitLength);
+    Serial.println("Fan 2: OFF");
+  }
+}
+
+BLYNK_WRITE(FAN2_LOW_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan2_Low, rfBitLength);
+    Serial.println("Fan 2: LOW speed");
+  }
+}
+
+BLYNK_WRITE(FAN2_MED_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan2_Med, rfBitLength);
+    Serial.println("Fan 2: MEDIUM speed");
+  }
+}
+
+BLYNK_WRITE(FAN2_HIGH_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan2_High, rfBitLength);
+    Serial.println("Fan 2: HIGH speed");
+  }
+}
+
+BLYNK_WRITE(FAN2_LIGHT_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan2_Light, rfBitLength);
+    Serial.println("Fan 2: Light toggled");
+  }
+}
+
+// Fan 3 Controls
+BLYNK_WRITE(FAN3_OFF_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan3_Off, rfBitLength);
+    Serial.println("Fan 3: OFF");
+  }
+}
+
+BLYNK_WRITE(FAN3_LOW_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan3_Low, rfBitLength);
+    Serial.println("Fan 3: LOW speed");
+  }
+}
+
+BLYNK_WRITE(FAN3_MED_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan3_Med, rfBitLength);
+    Serial.println("Fan 3: MEDIUM speed");
+  }
+}
+
+BLYNK_WRITE(FAN3_HIGH_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan3_High, rfBitLength);
+    Serial.println("Fan 3: HIGH speed");
+  }
+}
+
+BLYNK_WRITE(FAN3_LIGHT_VPIN) {
+  if (param.asInt() == 1 && !rfLearningMode) {
+    sendRFCommand(fan3_Light, rfBitLength);
+    Serial.println("Fan 3: Light toggled");
+  }
+}
+
 void setup() {
   // Start serial communication
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("\n=== Arduino TCM - Smart Pellet Stove Controller ===");
+  Serial.println("\n=== Arduino TCM - Smart Home Climate Controller ===");
+  Serial.println("Pellet Stove (IR) + 3 Ceiling Fans (RF)");
   Serial.println("Control Mode: PID-style heat level adjustment (1-5)");
 
   // Initialize DHT sensor
@@ -618,8 +966,16 @@ void setup() {
   Serial.println("✓ IR transmitter initialized on GPIO15");
   Serial.println("✓ IR receiver initialized on GPIO14");
 
-  // Load saved IR codes from flash memory
+  // Initialize RF components
+  rfSwitch.enableTransmit(RF_TRANSMIT_PIN);
+  rfSwitch.setRepeatTransmit(3);  // Send each code 3 times for reliability
+  Serial.println("✓ RF transmitter initialized on GPIO16");
+  Serial.println("  Note: Connect 433MHz RF transmitter to GPIO16");
+  Serial.println("  Optional: Connect 433MHz RF receiver to GPIO17 for learning mode");
+
+  // Load saved codes from flash memory
   loadIRCodes();
+  loadRFCodes();
 
   // Set WiFi mode BEFORE Blynk initialization for ESP-NOW compatibility
   WiFi.mode(WIFI_AP_STA); // Enable both AP and Station mode for ESP-NOW
@@ -643,6 +999,9 @@ void setup() {
   // Set timer to check for IR signals every 100ms when in learning mode
   timer.setInterval(100L, checkForIRSignal);
 
+  // Set timer to check for RF signals every 100ms when in RF learning mode
+  timer.setInterval(100L, checkForRFSignal);
+
   // Send initial status to Blynk
   Blynk.virtualWrite(STOVE_STATUS_VPIN, stoveIsOn ? 1 : 0);
   Blynk.virtualWrite(HEAT_LEVEL_VPIN, currentHeatLevel);
@@ -653,25 +1012,38 @@ void setup() {
   Blynk.virtualWrite(REMOTE_TEMP_VPIN, remoteTemp);
 
   Serial.println("\n=== System Ready ===");
-  Serial.println("Use Blynk app to:");
+  Serial.println("\n** PELLET STOVE CONTROLS (IR) **");
   Serial.println("- V3: Turn stove ON");
   Serial.println("- V4: Turn stove OFF");
   Serial.println("- V5: Set target temperature");
   Serial.println("- V6: Enable/disable auto mode");
-  Serial.println("- V7: Enter IR learning mode");
+  Serial.println("- V7: IR learning mode (stove)");
   Serial.println("- V8: Manual heat UP");
   Serial.println("- V9: Manual heat DOWN");
-  Serial.println("- V10: View current heat level (1-5)");
-  Serial.println("- V11: View stove status");
-  Serial.println("- V12: Adjust cooldown period (5-30 minutes)");
-  Serial.println("- V13: Sync actual heat level (0-5)");
-  Serial.println("- V14: Select zone (0=Zone1, 1=Zone2, 2=Average)");
-  Serial.println("- V15: View Zone 2 temperature");
-  Serial.println("\nMulti-Zone Control:");
+  Serial.println("- V10: Current heat level (1-5)");
+  Serial.println("- V11: Stove status");
+  Serial.println("- V12: Cooldown period (5-30 min)");
+  Serial.println("- V13: Sync heat level (0-5)");
+
+  Serial.println("\n** TEMPERATURE SENSORS **");
+  Serial.println("- V0: Local temperature");
+  Serial.println("- V2: Local humidity");
+  Serial.println("- V14: Zone selector (0=Local, 1=Remote, 2=Average)");
+  Serial.println("- V15: Remote zone temperature");
+
+  Serial.println("\n** CEILING FAN CONTROLS (RF 433MHz) **");
+  Serial.println("- V16-V20: Fan 1 (Off/Low/Med/High/Light)");
+  Serial.println("- V21-V25: Fan 2 (Off/Low/Med/High/Light)");
+  Serial.println("- V26-V30: Fan 3 (Off/Low/Med/High/Light)");
+  Serial.println("- V31: RF learning mode (fans)");
+
+  Serial.println("\n** MULTI-ZONE INFO **");
   Serial.println("- Zone 1: Local DHT11 sensor (stove room)");
   Serial.println("- Zone 2: Remote ESP32 sensor (other room)");
-  Serial.println("- Average: Uses average of both zones");
-  Serial.println("\nAuto mode adjusts heat level based on selected zone temperature");
+  Serial.println("- Average: Average of both zones");
+
+  Serial.println("\n** AUTO MODE **");
+  Serial.println("Auto mode adjusts stove heat level based on selected zone temperature");
   Serial.print("Default cooldown: ");
   Serial.print(adjustmentCooldown / 60000);
   Serial.println(" minutes");

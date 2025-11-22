@@ -1,36 +1,58 @@
-# Arduino TCM - Smart Pellet Stove Controller
+# Arduino TCM - Smart Home Climate Controller
 
-Automated pellet stove control system using ESP32 with DHT11 temperature/humidity monitoring and IR remote control. Features temperature-based automation and remote control via Blynk IoT platform.
+Comprehensive home climate control system using ESP32 with:
+- **Pellet Stove Control** (IR) - Automated temperature-based heat management
+- **3 Ceiling Fans Control** (433MHz RF) - Independent fan speed and light control
+- **Multi-Zone Temperature Monitoring** - DHT11 sensors with ESP-NOW wireless network
+- **Blynk IoT Integration** - Remote control from anywhere
 
 ## Features
 
-✅ **Temperature & Humidity Monitoring** - Real-time DHT11 sensor readings
-✅ **IR Learning** - Capture commands from your pellet stove's remote
+### Pellet Stove Control (IR)
+✅ **IR Learning Mode** - Capture commands from your pellet stove's remote
 ✅ **PID-Style Heat Control** - Automatically adjusts heat level (1-5) based on temperature
 ✅ **Manual Control** - Remote stove on/off and heat adjustment via Blynk app
 ✅ **Smart Heat Adjustment** - Uses 5 heat levels instead of on/off cycling
 ✅ **Adjustable Cooldown** - User-configurable interval (5-30 min) between auto adjustments
-✅ **Real-time Status** - Monitor stove state, heat level, and temperature from anywhere
-✅ **Persistent Storage** - IR codes saved to flash memory (survive reboots)
-✅ **Sensor Protection** - Auto-disables if temperature sensor fails
 ✅ **Heat Level Sync** - Manually sync software state with actual stove level
+
+### Ceiling Fan Control (433MHz RF)
+✅ **3 Independent Fans** - Control 3 separate ceiling fans
+✅ **RF Learning Mode** - Capture commands from all 3 fan remotes
+✅ **Speed Control** - Off, Low, Medium, High for each fan
+✅ **Light Control** - Toggle lights on each fan
+✅ **Persistent Storage** - RF codes saved to flash memory
+
+### General Features
+✅ **Temperature & Humidity Monitoring** - Real-time DHT11 sensor readings
 ✅ **Multi-Zone Control** - Control stove based on temperature from different rooms
 ✅ **ESP-NOW Communication** - Fast, reliable wireless sensor network (no internet needed)
+✅ **Real-time Status** - Monitor all devices from anywhere via Blynk
+✅ **Sensor Protection** - Auto-disables if temperature sensor fails
+✅ **Unified Control** - Single Blynk app controls stove, fans, and monitors temperature
 
 ## Hardware Requirements
 
 ### Core Components
 - **ESP32 development board**
 - **DHT11** temperature and humidity sensor
+- Jumper wires
+- Breadboard
+
+### For Pellet Stove Control (IR)
 - **VS1838B** IR receiver module (38kHz)
 - **940nm IR LED** transmitter
 - **2N2222 NPN transistor** (for IR LED)
 - **100Ω resistor** (for IR LED current limiting)
 - **10kΩ resistor** (for transistor base)
-- Jumper wires
-- Breadboard
+
+### For Ceiling Fan Control (RF)
+- **433MHz RF Transmitter Module** (FS1000A, SYN115, or RXB6)
+- **433MHz RF Receiver Module** (Optional, for learning mode - RXB6 or WL101-341)
+- **17cm wire antenna** (Optional, for better range)
 
 ### Optional
+- **Additional ESP32** with DHT11 for remote zone temperature monitoring
 - Enclosure/case for permanent installation
 - Power supply (USB or 5V adapter)
 
@@ -76,6 +98,35 @@ IR LED Cathode (-) → Transistor Collector
 - Use 100Ω resistor to limit IR LED current (~40-50mA)
 - Point IR LED directly at your pellet stove's IR receiver
 
+### 433MHz RF Transmitter (Required for Fan Control)
+```
+RF TX Module   ESP32
+─────────────────────
+VCC     →      5V (or 3.3V depending on module)
+GND     →      GND
+DATA    →      GPIO16
+ANT     →      17cm wire antenna (optional, for better range)
+```
+
+### 433MHz RF Receiver (Optional, for Learning Mode)
+```
+RF RX Module   ESP32
+─────────────────────
+VCC     →      5V (or 3.3V depending on module)
+GND     →      GND
+DATA    →      GPIO17
+ANT     →      17cm wire antenna (optional, for better range)
+```
+
+**Important Notes:**
+- Most RF modules work with both 3.3V and 5V, check your module's datasheet
+- 17cm antenna wire significantly improves range (cut to exactly 17.3cm for 433MHz)
+- RF transmitter is REQUIRED to control ceiling fans
+- RF receiver is OPTIONAL - only needed for learning mode to capture fan remote codes
+- If you already know your fan RF codes, you can skip the receiver and enter codes manually
+- Point RF transmitter toward ceiling fans (RF works through walls, no line-of-sight needed)
+- Typical range: 30-50 feet without antenna, 100+ feet with antenna
+
 ## Software Requirements
 
 ### Arduino IDE Setup
@@ -97,7 +148,8 @@ Install via Arduino IDE (**Sketch → Include Library → Manage Libraries**):
 | **Blynk** | Volodymyr Shymanskyy | IoT platform connectivity |
 | **DHT sensor library** | Adafruit | DHT11 temperature/humidity |
 | **Adafruit Unified Sensor** | Adafruit | DHT library dependency |
-| **IRremoteESP8266** | David Conran, Sebastien Warin | IR transmit/receive |
+| **IRremoteESP8266** | David Conran, Sebastien Warin | IR transmit/receive (pellet stove) |
+| **rc-switch** | sui77 | 433MHz RF transmit/receive (ceiling fans) |
 
 ## Blynk Setup
 
