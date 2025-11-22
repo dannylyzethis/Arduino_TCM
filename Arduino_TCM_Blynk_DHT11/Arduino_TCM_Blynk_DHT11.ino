@@ -8,6 +8,8 @@
 #include <IRrecv.h>
 #include <IRutils.h>
 #include <Preferences.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
 
 // Define DHT11 pin and type
 #define DHTPIN 4        // GPIO4
@@ -38,6 +40,8 @@ char pass[] = "jennyjenny92";
 #define STOVE_STATUS_VPIN V11   // Stove status (On/Off)
 #define COOLDOWN_VPIN V12       // Adjustment cooldown period (minutes)
 #define HEAT_SYNC_VPIN V13      // Manual heat level sync (1-5)
+#define ZONE_SELECT_VPIN V14    // Zone selector (0=Zone1, 1=Zone2, 2=Average)
+#define REMOTE_TEMP_VPIN V15    // Remote zone temperature display
 
 // Initialize components
 DHT dht(DHTPIN, DHTTYPE);
@@ -58,6 +62,22 @@ unsigned long lastAdjustmentTime = 0;
 unsigned long adjustmentCooldown = 900000; // 15 minutes between auto adjustments (900000 ms)
 int sensorFailCount = 0;            // Track consecutive sensor failures
 const int MAX_SENSOR_FAILS = 3;     // Disable auto mode after this many failures
+
+// Multi-zone temperature control
+float localTemp = 0.0;              // Temperature from local DHT11 (Zone 1)
+float remoteTemp = 0.0;             // Temperature from remote ESP32 (Zone 2)
+int activeZone = 0;                 // 0=Zone1, 1=Zone2, 2=Average
+unsigned long lastRemoteTempTime = 0;
+const unsigned long REMOTE_TIMEOUT = 300000; // 5 minutes - consider remote offline if no update
+
+// ESP-NOW data structure for receiving temperature
+typedef struct {
+  float temperature;
+  float humidity;
+  uint8_t sensorID;  // Identifier for multiple remote sensors
+} RemoteSensorData;
+
+RemoteSensorData incomingData;
 
 // IR code storage (you'll capture these from your stove remote)
 uint64_t irCode_PowerOn = 0;        // Store your stove's power ON button code
@@ -117,6 +137,52 @@ void loadIRCodes() {
     Serial.println(uint64ToString(irCode_HeatDown, HEX));
   } else {
     Serial.println("No saved IR codes found - please use learning mode");
+  }
+}
+
+// ESP-NOW callback when data is received from remote sensor
+void onDataReceive(const uint8_t * mac, const uint8_t *incomingDataPtr, int len) {
+  memcpy(&incomingData, incomingDataPtr, sizeof(incomingData));
+
+  remoteTemp = incomingData.temperature;
+  lastRemoteTempTime = millis();
+
+  Serial.print("ESP-NOW: Received from Zone 2 - Temp: ");
+  Serial.print(remoteTemp);
+  Serial.print("°F, Humidity: ");
+  Serial.print(incomingData.humidity);
+  Serial.println("%");
+
+  // Update Blynk with remote temperature
+  Blynk.virtualWrite(REMOTE_TEMP_VPIN, remoteTemp);
+
+  // Update current temp based on active zone
+  updateActiveTemperature();
+}
+
+// Update current temperature based on selected zone
+void updateActiveTemperature() {
+  switch (activeZone) {
+    case 0:  // Zone 1 (Local sensor)
+      currentTemp = localTemp;
+      break;
+    case 1:  // Zone 2 (Remote sensor)
+      // Check if remote data is recent
+      if (millis() - lastRemoteTempTime < REMOTE_TIMEOUT) {
+        currentTemp = remoteTemp;
+      } else {
+        Serial.println("WARNING: Remote sensor data stale, using local temp");
+        currentTemp = localTemp;
+      }
+      break;
+    case 2:  // Average of both zones
+      if (millis() - lastRemoteTempTime < REMOTE_TIMEOUT) {
+        currentTemp = (localTemp + remoteTemp) / 2.0;
+      } else {
+        Serial.println("WARNING: Remote sensor offline, using local temp only");
+        currentTemp = localTemp;
+      }
+      break;
   }
 }
 
@@ -333,7 +399,10 @@ void sendData() {
 
   // Reset fail counter on successful read
   sensorFailCount = 0;
-  currentTemp = f; // Store current temperature for automation
+  localTemp = f; // Store local temperature
+
+  // Update current temperature based on active zone
+  updateActiveTemperature();
 
   // Send data to Blynk app
   Blynk.virtualWrite(TEMP_VPIN, f);
@@ -460,6 +529,22 @@ BLYNK_WRITE(HEAT_SYNC_VPIN) {
   }
 }
 
+// Blynk: Zone selector
+BLYNK_WRITE(ZONE_SELECT_VPIN) {
+  activeZone = param.asInt();
+
+  const char* zoneNames[] = {"Zone 1 (Stove Room)", "Zone 2 (Remote)", "Average of Both"};
+  Serial.print("Active zone changed to: ");
+  Serial.println(zoneNames[activeZone]);
+
+  // Immediately update temperature based on new zone
+  updateActiveTemperature();
+
+  Serial.print("Using temperature: ");
+  Serial.print(currentTemp);
+  Serial.println("°F for automation");
+}
+
 // Blynk: IR Learning mode button
 BLYNK_WRITE(LEARN_MODE_VPIN) {
   int buttonState = param.asInt();
@@ -499,6 +584,15 @@ void setup() {
   Blynk.begin(auth, ssid, pass);
   Serial.println("✓ Connected to Blynk");
 
+  // Initialize ESP-NOW for multi-zone temperature
+  WiFi.mode(WIFI_AP_STA); // Enable both AP and Station mode for ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+  esp_now_register_recv_cb(onDataReceive);
+  Serial.println("✓ ESP-NOW initialized (ready to receive from remote sensors)");
+
   // Set timer to send data every 2 minutes (120,000 ms)
   timer.setInterval(120000L, sendData);
 
@@ -511,6 +605,8 @@ void setup() {
   Blynk.virtualWrite(TEMP_SETPOINT_VPIN, tempSetpoint);
   Blynk.virtualWrite(AUTO_MODE_VPIN, autoMode ? 1 : 0);
   Blynk.virtualWrite(COOLDOWN_VPIN, adjustmentCooldown / 60000); // Send in minutes
+  Blynk.virtualWrite(ZONE_SELECT_VPIN, activeZone);
+  Blynk.virtualWrite(REMOTE_TEMP_VPIN, remoteTemp);
 
   Serial.println("\n=== System Ready ===");
   Serial.println("Use Blynk app to:");
@@ -525,7 +621,13 @@ void setup() {
   Serial.println("- V11: View stove status");
   Serial.println("- V12: Adjust cooldown period (5-30 minutes)");
   Serial.println("- V13: Sync actual heat level (0-5)");
-  Serial.println("\nAuto mode adjusts heat level based on temperature");
+  Serial.println("- V14: Select zone (0=Zone1, 1=Zone2, 2=Average)");
+  Serial.println("- V15: View Zone 2 temperature");
+  Serial.println("\nMulti-Zone Control:");
+  Serial.println("- Zone 1: Local DHT11 sensor (stove room)");
+  Serial.println("- Zone 2: Remote ESP32 sensor (other room)");
+  Serial.println("- Average: Uses average of both zones");
+  Serial.println("\nAuto mode adjusts heat level based on selected zone temperature");
   Serial.print("Default cooldown: ");
   Serial.print(adjustmentCooldown / 60000);
   Serial.println(" minutes");

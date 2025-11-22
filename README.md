@@ -14,6 +14,8 @@ Automated pellet stove control system using ESP32 with DHT11 temperature/humidit
 ✅ **Persistent Storage** - IR codes saved to flash memory (survive reboots)
 ✅ **Sensor Protection** - Auto-disables if temperature sensor fails
 ✅ **Heat Level Sync** - Manually sync software state with actual stove level
+✅ **Multi-Zone Control** - Control stove based on temperature from different rooms
+✅ **ESP-NOW Communication** - Fast, reliable wireless sensor network (no internet needed)
 
 ## Hardware Requirements
 
@@ -124,6 +126,8 @@ Configure these virtual pins in your Blynk template:
 | **V11** | Stove Status | LED/Value | 0-1 | Stove on/off indicator |
 | **V12** | Cooldown Period | Slider | 5-30 min | Auto adjustment interval |
 | **V13** | Heat Sync | Slider | 0-5 | Manual heat level sync |
+| **V14** | Zone Select | Menu | 0-2 | Select active zone (0=Zone1, 1=Zone2, 2=Avg) |
+| **V15** | Zone 2 Temp | Value | 32-120°F | Remote sensor temperature |
 
 ### 3. Add Dashboard Widgets
 
@@ -141,6 +145,8 @@ Configure these virtual pins in your Blynk template:
 - **LED** widget → V11 (Stove Status: On/Off)
 - **Slider** widget → V12 (Cooldown Period: 5-30 minutes)
 - **Slider** widget → V13 (Heat Level Sync: 0-5)
+- **Menu** widget → V14 (Zone Select: Zone 1, Zone 2, Average)
+- **Value Display** widget → V15 (Zone 2 Temperature)
 
 ## Configuration
 
@@ -260,6 +266,61 @@ If the system's heat level gets out of sync with your actual stove (e.g., after 
 - After ESP32 reboots while stove is running
 - If you manually changed heat using the physical remote
 - If an IR command failed and states are mismatched
+
+### Step 6: Setup Multi-Zone Control (Optional)
+
+Control your pellet stove based on temperature from a different room using ESP-NOW wireless communication.
+
+**What You Need:**
+- Second ESP32 board
+- DHT11 sensor for remote room
+- 5V power supply for remote sensor
+
+**Setup Instructions:**
+
+1. **Get Main Controller's MAC Address**
+   - Upload main sketch to primary ESP32
+   - Open Serial Monitor (115200 baud)
+   - Look for MAC address in WiFi connection messages
+   - Note it down (format: XX:XX:XX:XX:XX:XX)
+
+2. **Program Remote Sensor**
+   - Open `Remote_Sensor_ESP32/Remote_Sensor_ESP32.ino`
+   - Replace `mainControllerMAC[]` with your main controller's MAC
+   - Update WiFi credentials (must match main controller)
+   - Upload to second ESP32
+
+3. **Wire Remote Sensor**
+   ```
+   DHT11          ESP32
+   ─────────────────────
+   VCC     →      3.3V
+   GND     →      GND
+   DATA    →      GPIO4
+   ```
+
+4. **Place Remote Sensor**
+   - Install in room you want to monitor
+   - Must be within WiFi range of main controller
+   - Sends temperature every 30 seconds
+
+5. **Configure Zone in Blynk App**
+   - Use **Zone Select menu** (V14):
+     - **Zone 1** - Control based on stove room temp (local sensor)
+     - **Zone 2** - Control based on remote room temp
+     - **Average** - Use average of both rooms
+   - View **Zone 2 Temp** (V15) to verify remote sensor is working
+
+**How It Works:**
+- Remote sensor sends temp via ESP-NOW (no internet needed)
+- Main controller receives and displays on V15
+- Select which zone controls the stove via V14
+- Auto mode adjusts heat based on selected zone
+
+**Troubleshooting:**
+- If Zone 2 shows 0°F → Check MAC address configuration
+- If "Remote sensor offline" → Check WiFi connection and range
+- System automatically falls back to Zone 1 if remote fails
 
 ## Usage
 
@@ -483,7 +544,9 @@ This is an automation project for educational purposes. When using with heating 
 ```
 Arduino_TCM/
 ├── Arduino_TCM_Blynk_DHT11/
-│   └── Arduino_TCM_Blynk_DHT11.ino    # Main sketch
+│   └── Arduino_TCM_Blynk_DHT11.ino    # Main controller sketch
+├── Remote_Sensor_ESP32/
+│   └── Remote_Sensor_ESP32.ino        # Remote zone sensor (optional)
 └── README.md                           # This file
 ```
 
