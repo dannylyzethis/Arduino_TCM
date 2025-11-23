@@ -73,6 +73,12 @@ char pass[] = "jennyjenny92";
 // RF Learning Mode
 #define RF_LEARN_MODE_VPIN V31  // RF Learning mode button
 
+// Temperature Equalization Learning Virtual Pins
+#define AUTO_EQUALIZE_VPIN V32    // Auto-equalization mode switch
+#define TEMP_DIFF_THRESHOLD_VPIN V33  // Temperature difference threshold slider
+#define LEARNING_STATUS_VPIN V34  // Learning status display
+#define RESET_LEARNING_VPIN V35   // Reset learned data button
+
 // Initialize components
 DHT dht(DHTPIN, DHTTYPE);
 IRsend irsend(IR_SEND_PIN);
@@ -147,6 +153,44 @@ unsigned long fan3_Light = 0;
 bool rfLearningMode = false;
 int rfLearningStep = 0;  // 0-4: Fan1 codes, 5-9: Fan2 codes, 10-14: Fan3 codes
 int rfBitLength = 24;    // Default bit length (will be detected)
+
+// Temperature Equalization Learning System
+#define MAX_LEARNING_SAMPLES 50  // Store up to 50 learning samples per fan/speed combination
+
+// Fan state tracking
+struct FanState {
+  uint8_t speed;  // 0=Off, 1=Low, 2=Med, 3=High
+  unsigned long lastChangeTime;
+};
+
+FanState fan1State = {0, 0};
+FanState fan2State = {0, 0};
+FanState fan3State = {0, 0};
+
+// Learning data structure
+struct TempLearningData {
+  float zone1TempChange;  // Temperature change in Zone 1 (°F per minute)
+  float zone2TempChange;  // Temperature change in Zone 2 (°F per minute)
+  uint8_t sampleCount;    // Number of samples collected
+  unsigned long lastUpdateTime;
+};
+
+// Learning model: [fanIndex][speedIndex] → temperature impact
+// fanIndex: 0=Fan1, 1=Fan2, 2=Fan3
+// speedIndex: 0=Off, 1=Low, 2=Med, 3=High
+TempLearningData learningModel[3][4];
+
+// Auto-equalization settings
+bool autoEqualizationMode = false;
+float tempDifferenceThreshold = 3.0;  // Start equalizing when zones differ by 3°F
+unsigned long lastEqualizationAction = 0;
+const unsigned long EQUALIZATION_COOLDOWN = 300000; // 5 minutes between actions
+
+// Temperature tracking for learning
+float lastZone1Temp = 0.0;
+float lastZone2Temp = 0.0;
+unsigned long lastTempSampleTime = 0;
+const unsigned long TEMP_SAMPLE_INTERVAL = 60000; // Sample every 1 minute for learning
 
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
@@ -286,6 +330,257 @@ void loadRFCodes() {
     Serial.println("No saved RF codes found - please use RF learning mode");
   }
 }
+
+// ===== TEMPERATURE EQUALIZATION LEARNING SYSTEM =====
+
+// Initialize learning model
+void initLearningModel() {
+  for (int fan = 0; fan < 3; fan++) {
+    for (int speed = 0; speed < 4; speed++) {
+      learningModel[fan][speed].zone1TempChange = 0.0;
+      learningModel[fan][speed].zone2TempChange = 0.0;
+      learningModel[fan][speed].sampleCount = 0;
+      learningModel[fan][speed].lastUpdateTime = 0;
+    }
+  }
+}
+
+// Update fan state when fan command is sent
+void updateFanState(uint8_t fanIndex, uint8_t newSpeed) {
+  FanState* fan;
+
+  switch(fanIndex) {
+    case 0: fan = &fan1State; break;
+    case 1: fan = &fan2State; break;
+    case 2: fan = &fan3State; break;
+    default: return;
+  }
+
+  fan->speed = newSpeed;
+  fan->lastChangeTime = millis();
+
+  Serial.print("Fan ");
+  Serial.print(fanIndex + 1);
+  Serial.print(" state updated: Speed ");
+  Serial.println(newSpeed);
+}
+
+// Collect temperature samples and learn correlations
+void collectTemperatureSample() {
+  unsigned long currentTime = millis();
+
+  // Only sample every minute
+  if (currentTime - lastTempSampleTime < TEMP_SAMPLE_INTERVAL) {
+    return;
+  }
+
+  // Need both zones active for learning
+  if (currentTime - lastRemoteTempTime > REMOTE_TIMEOUT) {
+    return; // Remote sensor offline
+  }
+
+  // Calculate temperature changes since last sample
+  float zone1Change = localTemp - lastZone1Temp;
+  float zone2Change = remoteTemp - lastZone2Temp;
+
+  // Calculate time elapsed in minutes
+  float minutesElapsed = (currentTime - lastTempSampleTime) / 60000.0;
+
+  if (minutesElapsed > 0 && lastTempSampleTime > 0) {
+    // Temperature change rate (°F per minute)
+    float zone1Rate = zone1Change / minutesElapsed;
+    float zone2Rate = zone2Change / minutesElapsed;
+
+    // Update learning model for each active fan
+    for (int fan = 0; fan < 3; fan++) {
+      FanState* fanState;
+      switch(fan) {
+        case 0: fanState = &fan1State; break;
+        case 1: fanState = &fan2State; break;
+        case 2: fanState = &fan3State; break;
+      }
+
+      // Only learn if fan has been in this state for at least 2 minutes
+      if (currentTime - fanState->lastChangeTime >= 120000) {
+        uint8_t speed = fanState->speed;
+        TempLearningData* data = &learningModel[fan][speed];
+
+        // Running average of temperature change rates
+        if (data->sampleCount < MAX_LEARNING_SAMPLES) {
+          // Add new sample
+          data->zone1TempChange = ((data->zone1TempChange * data->sampleCount) + zone1Rate) / (data->sampleCount + 1);
+          data->zone2TempChange = ((data->zone2TempChange * data->sampleCount) + zone2Rate) / (data->sampleCount + 1);
+          data->sampleCount++;
+          data->lastUpdateTime = currentTime;
+
+          // Log learning progress
+          if (data->sampleCount % 5 == 0) {
+            Serial.print("Learning: Fan");
+            Serial.print(fan + 1);
+            Serial.print(" Speed");
+            Serial.print(speed);
+            Serial.print(" - Samples: ");
+            Serial.print(data->sampleCount);
+            Serial.print(" Z1: ");
+            Serial.print(data->zone1TempChange, 3);
+            Serial.print("°F/min Z2: ");
+            Serial.print(data->zone2TempChange, 3);
+            Serial.println("°F/min");
+          }
+        }
+      }
+    }
+  }
+
+  // Update last temperatures and time
+  lastZone1Temp = localTemp;
+  lastZone2Temp = remoteTemp;
+  lastTempSampleTime = currentTime;
+}
+
+// Save learning data to EEPROM
+void saveLearningData() {
+  preferences.begin("templearn", false);
+
+  for (int fan = 0; fan < 3; fan++) {
+    for (int speed = 0; speed < 4; speed++) {
+      String key = String(fan) + "_" + String(speed);
+      preferences.putFloat((key + "_z1").c_str(), learningModel[fan][speed].zone1TempChange);
+      preferences.putFloat((key + "_z2").c_str(), learningModel[fan][speed].zone2TempChange);
+      preferences.putUChar((key + "_cnt").c_str(), learningModel[fan][speed].sampleCount);
+    }
+  }
+
+  preferences.end();
+  Serial.println("Learning data saved to flash memory");
+}
+
+// Load learning data from EEPROM
+void loadLearningData() {
+  preferences.begin("templearn", true);
+
+  int totalSamples = 0;
+  for (int fan = 0; fan < 3; fan++) {
+    for (int speed = 0; speed < 4; speed++) {
+      String key = String(fan) + "_" + String(speed);
+      learningModel[fan][speed].zone1TempChange = preferences.getFloat((key + "_z1").c_str(), 0.0);
+      learningModel[fan][speed].zone2TempChange = preferences.getFloat((key + "_z2").c_str(), 0.0);
+      learningModel[fan][speed].sampleCount = preferences.getUChar((key + "_cnt").c_str(), 0);
+      totalSamples += learningModel[fan][speed].sampleCount;
+    }
+  }
+
+  preferences.end();
+
+  if (totalSamples > 0) {
+    Serial.println("✓ Temperature learning data loaded");
+    Serial.print("  Total samples: ");
+    Serial.println(totalSamples);
+  } else {
+    Serial.println("No learning data found - system will learn over time");
+  }
+}
+
+// Auto-equalization: Use learned data to balance temperatures
+void autoEqualizeTemperatures() {
+  if (!autoEqualizationMode) return;
+
+  unsigned long currentTime = millis();
+
+  // Cooldown between actions
+  if (currentTime - lastEqualizationAction < EQUALIZATION_COOLDOWN) {
+    return;
+  }
+
+  // Need both zones active
+  if (currentTime - lastRemoteTempTime > REMOTE_TIMEOUT) {
+    return;
+  }
+
+  // Calculate temperature difference
+  float tempDiff = localTemp - remoteTemp;
+
+  // Only act if difference exceeds threshold
+  if (abs(tempDiff) < tempDifferenceThreshold) {
+    return;
+  }
+
+  Serial.print("Temperature difference detected: ");
+  Serial.print(tempDiff);
+  Serial.println("°F");
+
+  // Determine which zone needs cooling/warming
+  bool zone1NeedsCooling = (tempDiff > 0);  // Zone 1 is warmer
+  bool zone2NeedsCooling = (tempDiff < 0);  // Zone 2 is warmer
+
+  // Find best fan/speed combination using learned data
+  int bestFan = -1;
+  int bestSpeed = -1;
+  float bestEffect = 0.0;
+
+  for (int fan = 0; fan < 3; fan++) {
+    for (int speed = 1; speed < 4; speed++) {  // Skip speed 0 (OFF)
+      TempLearningData* data = &learningModel[fan][speed];
+
+      // Need at least 5 samples to trust the data
+      if (data->sampleCount < 5) continue;
+
+      // Calculate expected effect on temperature difference
+      // Positive effect = reduces temperature difference
+      float effect = 0.0;
+
+      if (zone1NeedsCooling) {
+        // Want to cool Zone 1 or warm Zone 2
+        effect = -data->zone1TempChange + data->zone2TempChange;
+      } else {
+        // Want to warm Zone 1 or cool Zone 2
+        effect = data->zone1TempChange - data->zone2TempChange;
+      }
+
+      // Find fan with best (most positive) effect
+      if (effect > bestEffect) {
+        bestEffect = effect;
+        bestFan = fan;
+        bestSpeed = speed;
+      }
+    }
+  }
+
+  // Execute best fan action
+  if (bestFan >= 0 && bestSpeed >= 0) {
+    Serial.print("Auto-Equalization: Running Fan ");
+    Serial.print(bestFan + 1);
+    Serial.print(" at speed ");
+    Serial.print(bestSpeed);
+    Serial.print(" (expected effect: ");
+    Serial.print(bestEffect, 3);
+    Serial.println("°F/min)");
+
+    // Send fan command
+    unsigned long code = 0;
+    switch(bestFan) {
+      case 0:
+        code = (bestSpeed == 1) ? fan1_Low : (bestSpeed == 2) ? fan1_Med : fan1_High;
+        break;
+      case 1:
+        code = (bestSpeed == 1) ? fan2_Low : (bestSpeed == 2) ? fan2_Med : fan2_High;
+        break;
+      case 2:
+        code = (bestSpeed == 1) ? fan3_Low : (bestSpeed == 2) ? fan3_Med : fan3_High;
+        break;
+    }
+
+    if (code != 0) {
+      sendRFCommand(code, rfBitLength);
+      updateFanState(bestFan, bestSpeed);
+      lastEqualizationAction = currentTime;
+    }
+  } else {
+    Serial.println("Auto-Equalization: Not enough learned data yet");
+  }
+}
+
+// ===== END TEMPERATURE EQUALIZATION LEARNING SYSTEM =====
 
 // ESP-NOW callback when data is received from remote sensor
 void onDataReceive(const uint8_t * mac, const uint8_t *incomingDataPtr, int len) {
@@ -843,6 +1138,7 @@ BLYNK_WRITE(RF_LEARN_MODE_VPIN) {
 BLYNK_WRITE(FAN1_OFF_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan1_Off, rfBitLength);
+    updateFanState(0, 0);  // Fan 1, Speed 0 (OFF)
     Serial.println("Fan 1: OFF");
   }
 }
@@ -850,6 +1146,7 @@ BLYNK_WRITE(FAN1_OFF_VPIN) {
 BLYNK_WRITE(FAN1_LOW_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan1_Low, rfBitLength);
+    updateFanState(0, 1);  // Fan 1, Speed 1 (LOW)
     Serial.println("Fan 1: LOW speed");
   }
 }
@@ -857,6 +1154,7 @@ BLYNK_WRITE(FAN1_LOW_VPIN) {
 BLYNK_WRITE(FAN1_MED_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan1_Med, rfBitLength);
+    updateFanState(0, 2);  // Fan 1, Speed 2 (MED)
     Serial.println("Fan 1: MEDIUM speed");
   }
 }
@@ -864,6 +1162,7 @@ BLYNK_WRITE(FAN1_MED_VPIN) {
 BLYNK_WRITE(FAN1_HIGH_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan1_High, rfBitLength);
+    updateFanState(0, 3);  // Fan 1, Speed 3 (HIGH)
     Serial.println("Fan 1: HIGH speed");
   }
 }
@@ -879,6 +1178,7 @@ BLYNK_WRITE(FAN1_LIGHT_VPIN) {
 BLYNK_WRITE(FAN2_OFF_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan2_Off, rfBitLength);
+    updateFanState(1, 0);  // Fan 2, Speed 0 (OFF)
     Serial.println("Fan 2: OFF");
   }
 }
@@ -886,6 +1186,7 @@ BLYNK_WRITE(FAN2_OFF_VPIN) {
 BLYNK_WRITE(FAN2_LOW_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan2_Low, rfBitLength);
+    updateFanState(1, 1);  // Fan 2, Speed 1 (LOW)
     Serial.println("Fan 2: LOW speed");
   }
 }
@@ -893,6 +1194,7 @@ BLYNK_WRITE(FAN2_LOW_VPIN) {
 BLYNK_WRITE(FAN2_MED_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan2_Med, rfBitLength);
+    updateFanState(1, 2);  // Fan 2, Speed 2 (MED)
     Serial.println("Fan 2: MEDIUM speed");
   }
 }
@@ -900,6 +1202,7 @@ BLYNK_WRITE(FAN2_MED_VPIN) {
 BLYNK_WRITE(FAN2_HIGH_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan2_High, rfBitLength);
+    updateFanState(1, 3);  // Fan 2, Speed 3 (HIGH)
     Serial.println("Fan 2: HIGH speed");
   }
 }
@@ -915,6 +1218,7 @@ BLYNK_WRITE(FAN2_LIGHT_VPIN) {
 BLYNK_WRITE(FAN3_OFF_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan3_Off, rfBitLength);
+    updateFanState(2, 0);  // Fan 3, Speed 0 (OFF)
     Serial.println("Fan 3: OFF");
   }
 }
@@ -922,6 +1226,7 @@ BLYNK_WRITE(FAN3_OFF_VPIN) {
 BLYNK_WRITE(FAN3_LOW_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan3_Low, rfBitLength);
+    updateFanState(2, 1);  // Fan 3, Speed 1 (LOW)
     Serial.println("Fan 3: LOW speed");
   }
 }
@@ -929,6 +1234,7 @@ BLYNK_WRITE(FAN3_LOW_VPIN) {
 BLYNK_WRITE(FAN3_MED_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan3_Med, rfBitLength);
+    updateFanState(2, 2);  // Fan 3, Speed 2 (MED)
     Serial.println("Fan 3: MEDIUM speed");
   }
 }
@@ -936,6 +1242,7 @@ BLYNK_WRITE(FAN3_MED_VPIN) {
 BLYNK_WRITE(FAN3_HIGH_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan3_High, rfBitLength);
+    updateFanState(2, 3);  // Fan 3, Speed 3 (HIGH)
     Serial.println("Fan 3: HIGH speed");
   }
 }
@@ -944,6 +1251,59 @@ BLYNK_WRITE(FAN3_LIGHT_VPIN) {
   if (param.asInt() == 1 && !rfLearningMode) {
     sendRFCommand(fan3_Light, rfBitLength);
     Serial.println("Fan 3: Light toggled");
+  }
+}
+
+// Temperature Equalization Learning Controls
+BLYNK_WRITE(AUTO_EQUALIZE_VPIN) {
+  autoEqualizationMode = param.asInt();
+  Serial.print("Auto-Equalization Mode: ");
+  Serial.println(autoEqualizationMode ? "ENABLED" : "DISABLED");
+
+  if (autoEqualizationMode) {
+    // Check if we have enough learned data
+    int totalSamples = 0;
+    for (int fan = 0; fan < 3; fan++) {
+      for (int speed = 1; speed < 4; speed++) {
+        totalSamples += learningModel[fan][speed].sampleCount;
+      }
+    }
+
+    if (totalSamples < 10) {
+      Serial.println("WARNING: Limited learning data. System will learn as it operates.");
+    } else {
+      Serial.print("Ready: ");
+      Serial.print(totalSamples);
+      Serial.println(" learning samples available");
+    }
+  }
+}
+
+BLYNK_WRITE(TEMP_DIFF_THRESHOLD_VPIN) {
+  float newThreshold = param.asFloat();
+
+  // Validate threshold (1-10°F)
+  if (newThreshold < 1.0) {
+    newThreshold = 1.0;
+    Blynk.virtualWrite(TEMP_DIFF_THRESHOLD_VPIN, 1.0);
+  } else if (newThreshold > 10.0) {
+    newThreshold = 10.0;
+    Blynk.virtualWrite(TEMP_DIFF_THRESHOLD_VPIN, 10.0);
+  }
+
+  tempDifferenceThreshold = newThreshold;
+  Serial.print("Temperature difference threshold set to: ");
+  Serial.print(tempDifferenceThreshold);
+  Serial.println("°F");
+}
+
+BLYNK_WRITE(RESET_LEARNING_VPIN) {
+  if (param.asInt() == 1) {
+    Serial.println("Resetting all learning data...");
+    initLearningModel();
+    saveLearningData();
+    Serial.println("Learning data reset complete!");
+    Blynk.virtualWrite(LEARNING_STATUS_VPIN, "Learning data reset");
   }
 }
 
@@ -977,6 +1337,11 @@ void setup() {
   loadIRCodes();
   loadRFCodes();
 
+  // Initialize temperature equalization learning system
+  initLearningModel();
+  loadLearningData();
+  Serial.println("✓ Temperature equalization learning system initialized");
+
   // Set WiFi mode BEFORE Blynk initialization for ESP-NOW compatibility
   WiFi.mode(WIFI_AP_STA); // Enable both AP and Station mode for ESP-NOW
 
@@ -1002,6 +1367,12 @@ void setup() {
   // Set timer to check for RF signals every 100ms when in RF learning mode
   timer.setInterval(100L, checkForRFSignal);
 
+  // Set timer for temperature learning (every 1 minute)
+  timer.setInterval(60000L, collectTemperatureSample);
+
+  // Set timer for auto-equalization (every 5 minutes)
+  timer.setInterval(300000L, autoEqualizeTemperatures);
+
   // Send initial status to Blynk
   Blynk.virtualWrite(STOVE_STATUS_VPIN, stoveIsOn ? 1 : 0);
   Blynk.virtualWrite(HEAT_LEVEL_VPIN, currentHeatLevel);
@@ -1010,6 +1381,9 @@ void setup() {
   Blynk.virtualWrite(COOLDOWN_VPIN, adjustmentCooldown / 60000); // Send in minutes
   Blynk.virtualWrite(ZONE_SELECT_VPIN, activeZone);
   Blynk.virtualWrite(REMOTE_TEMP_VPIN, remoteTemp);
+  Blynk.virtualWrite(AUTO_EQUALIZE_VPIN, autoEqualizationMode ? 1 : 0);
+  Blynk.virtualWrite(TEMP_DIFF_THRESHOLD_VPIN, tempDifferenceThreshold);
+  Blynk.virtualWrite(LEARNING_STATUS_VPIN, "System ready");
 
   Serial.println("\n=== System Ready ===");
   Serial.println("\n** PELLET STOVE CONTROLS (IR) **");
@@ -1047,6 +1421,17 @@ void setup() {
   Serial.print("Default cooldown: ");
   Serial.print(adjustmentCooldown / 60000);
   Serial.println(" minutes");
+
+  Serial.println("\n** TEMPERATURE EQUALIZATION LEARNING **");
+  Serial.println("- V32: Auto-Equalization Mode (learns which fan equalizes temps)");
+  Serial.println("- V33: Temp difference threshold (1-10°F)");
+  Serial.println("- V34: Learning status display");
+  Serial.println("- V35: Reset all learning data");
+  Serial.println("\nLearning System:");
+  Serial.println("- Automatically learns how each fan affects each zone");
+  Serial.println("- Uses learned data to balance temperatures");
+  Serial.println("- Improves over time as it collects more samples");
+  Serial.println("- Saves learned patterns to flash memory");
   Serial.println();
 }
 
