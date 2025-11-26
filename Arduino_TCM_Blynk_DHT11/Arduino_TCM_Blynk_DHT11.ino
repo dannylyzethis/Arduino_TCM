@@ -121,6 +121,7 @@ float zoneHumidity[TOTAL_ZONES] = {0.0, 0.0, 0.0, 0.0};  // Humidity for all 4 z
 unsigned long lastZoneTempTime[TOTAL_ZONES] = {0, 0, 0, 0};  // Last update time per zone
 const unsigned long REMOTE_TIMEOUT = 300000; // 5 minutes - consider remote offline if no update
 int thermostatZone = 0;  // Zone 0 controls the pellet stove (main thermostat)
+int activeZone = 0;      // Active zone for Blynk display (0-3, for backward compatibility)
 
 // Zone assignments:
 // Zone 0: Main/Stove area (local DHT11 on main controller)
@@ -402,14 +403,14 @@ void collectTemperatureSample() {
     return;
   }
 
-  // Need both zones active for learning
-  if (currentTime - lastRemoteTempTime > REMOTE_TIMEOUT) {
-    return; // Remote sensor offline
+  // Need zone 1 active for learning (check if remote sensor is online)
+  if (currentTime - lastZoneTempTime[1] > REMOTE_TIMEOUT) {
+    return; // Zone 1 sensor offline
   }
 
   // Calculate temperature changes since last sample
-  float zone1Change = localTemp - lastZone1Temp;
-  float zone2Change = remoteTemp - lastZone2Temp;
+  float zone1Change = zoneTemp[0] - lastZone1Temp;  // Zone 0 (main)
+  float zone2Change = zoneTemp[1] - lastZone2Temp;  // Zone 1 (fan 1 area)
 
   // Calculate time elapsed in minutes
   float minutesElapsed = (currentTime - lastTempSampleTime) / 60000.0;
@@ -449,9 +450,9 @@ void collectTemperatureSample() {
             Serial.print(speed);
             Serial.print(" - Samples: ");
             Serial.print(data->sampleCount);
-            Serial.print(" Z1: ");
+            Serial.print(" Z0: ");
             Serial.print(data->zone1TempChange, 3);
-            Serial.print("°F/min Z2: ");
+            Serial.print("°F/min Z1: ");
             Serial.print(data->zone2TempChange, 3);
             Serial.println("°F/min");
           }
@@ -461,8 +462,8 @@ void collectTemperatureSample() {
   }
 
   // Update last temperatures and time
-  lastZone1Temp = localTemp;
-  lastZone2Temp = remoteTemp;
+  lastZone1Temp = zoneTemp[0];
+  lastZone2Temp = zoneTemp[1];
   lastTempSampleTime = currentTime;
 }
 
@@ -520,13 +521,13 @@ void autoEqualizeTemperatures() {
     return;
   }
 
-  // Need both zones active
-  if (currentTime - lastRemoteTempTime > REMOTE_TIMEOUT) {
+  // Need zone 1 active (check if remote sensor is online)
+  if (currentTime - lastZoneTempTime[1] > REMOTE_TIMEOUT) {
     return;
   }
 
-  // Calculate temperature difference
-  float tempDiff = localTemp - remoteTemp;
+  // Calculate temperature difference between zones 0 and 1
+  float tempDiff = zoneTemp[0] - zoneTemp[1];
 
   // Only act if difference exceeds threshold
   if (abs(tempDiff) < tempDifferenceThreshold) {
@@ -1106,23 +1107,20 @@ BLYNK_WRITE(HEAT_SYNC_VPIN) {
 BLYNK_WRITE(ZONE_SELECT_VPIN) {
   int newZone = param.asInt();
 
-  // Validate zone selection (must be 0, 1, or 2)
-  if (newZone < 0 || newZone > 2) {
+  // Validate zone selection (must be 0-3)
+  if (newZone < 0 || newZone >= TOTAL_ZONES) {
     Serial.print("ERROR: Invalid zone selection: ");
     Serial.print(newZone);
-    Serial.println(" - Using Zone 1 (Local)");
+    Serial.println(" - Using Zone 0 (Main)");
     newZone = 0;
     Blynk.virtualWrite(ZONE_SELECT_VPIN, 0); // Reset to valid value
   }
 
   activeZone = newZone;
 
-  const char* zoneNames[] = {"Zone 1 (Stove Room)", "Zone 2 (Remote)", "Average of Both"};
+  const char* zoneNames[] = {"Zone 0 (Main/Stove)", "Zone 1 (Fan 1)", "Zone 2 (Fan 2)", "Zone 3 (Fan 3)"};
   Serial.print("Active zone changed to: ");
   Serial.println(zoneNames[activeZone]);
-
-  // Immediately update temperature based on new zone
-  updateActiveTemperature();
 
   Serial.print("Using temperature: ");
   Serial.print(currentTemp);
@@ -1635,7 +1633,7 @@ void setup() {
   Blynk.virtualWrite(AUTO_MODE_VPIN, autoMode ? 1 : 0);
   Blynk.virtualWrite(COOLDOWN_VPIN, adjustmentCooldown / 60000); // Send in minutes
   Blynk.virtualWrite(ZONE_SELECT_VPIN, activeZone);
-  Blynk.virtualWrite(REMOTE_TEMP_VPIN, remoteTemp);
+  Blynk.virtualWrite(REMOTE_TEMP_VPIN, zoneTemp[1]);  // Zone 1 temp
   Blynk.virtualWrite(AUTO_EQUALIZE_VPIN, autoEqualizationMode ? 1 : 0);
   Blynk.virtualWrite(TEMP_DIFF_THRESHOLD_VPIN, tempDifferenceThreshold);
   Blynk.virtualWrite(LEARNING_STATUS_VPIN, "System ready");
