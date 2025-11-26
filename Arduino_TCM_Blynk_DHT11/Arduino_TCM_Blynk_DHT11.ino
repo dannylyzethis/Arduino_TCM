@@ -730,6 +730,38 @@ void decreaseHeat() {
   Blynk.virtualWrite(HEAT_LEVEL_VPIN, currentHeatLevel);
 }
 
+// Adjust to specific heat level
+void adjustHeatLevel(int targetLevel) {
+  if (!stoveIsOn) {
+    Serial.println("Cannot adjust heat - stove is OFF");
+    return;
+  }
+
+  if (targetLevel < 1 || targetLevel > 5) {
+    Serial.println("Invalid heat level (must be 1-5)");
+    return;
+  }
+
+  Serial.print("Adjusting heat from ");
+  Serial.print(currentHeatLevel);
+  Serial.print(" to ");
+  Serial.println(targetLevel);
+
+  // Adjust heat level step by step
+  while (currentHeatLevel < targetLevel) {
+    increaseHeat();
+    delay(500);  // Small delay between adjustments
+  }
+
+  while (currentHeatLevel > targetLevel) {
+    decreaseHeat();
+    delay(500);  // Small delay between adjustments
+  }
+
+  Serial.print("✓ Heat level adjusted to ");
+  Serial.println(currentHeatLevel);
+}
+
 // IR Learning function
 void checkForIRSignal() {
   if (!learningMode) return;
