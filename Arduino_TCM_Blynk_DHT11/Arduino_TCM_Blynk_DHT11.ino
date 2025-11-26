@@ -114,12 +114,19 @@ unsigned long adjustmentCooldown = 900000; // 15 minutes between auto adjustment
 int sensorFailCount = 0;            // Track consecutive sensor failures
 const int MAX_SENSOR_FAILS = 3;     // Disable auto mode after this many failures
 
-// Multi-zone temperature control
-float localTemp = 0.0;              // Temperature from local DHT11 (Zone 1)
-float remoteTemp = 0.0;             // Temperature from remote ESP32 (Zone 2)
-int activeZone = 0;                 // 0=Zone1, 1=Zone2, 2=Average
-unsigned long lastRemoteTempTime = 0;
+// Multi-zone temperature control (4 zones total)
+#define TOTAL_ZONES 4
+float zoneTemp[TOTAL_ZONES] = {0.0, 0.0, 0.0, 0.0};  // Temps for all 4 zones
+float zoneHumidity[TOTAL_ZONES] = {0.0, 0.0, 0.0, 0.0};  // Humidity for all 4 zones
+unsigned long lastZoneTempTime[TOTAL_ZONES] = {0, 0, 0, 0};  // Last update time per zone
 const unsigned long REMOTE_TIMEOUT = 300000; // 5 minutes - consider remote offline if no update
+int thermostatZone = 0;  // Zone 0 controls the pellet stove (main thermostat)
+
+// Zone assignments:
+// Zone 0: Main/Stove area (local DHT11 on main controller)
+// Zone 1: Fan 1 area (remote sensor #1)
+// Zone 2: Fan 2 area (remote sensor #2)
+// Zone 3: Fan 3 area (remote sensor #3)
 
 // ESP-NOW data structure for receiving temperature
 typedef struct {
@@ -210,8 +217,8 @@ const unsigned long TEMP_SAMPLE_INTERVAL = 60000; // Sample every 1 minute for l
 unsigned long lastDisplayUpdate = 0;
 const unsigned long DISPLAY_UPDATE_INTERVAL = 4000; // Update display every 4 seconds (page rotation)
 bool displayInitialized = false;
-int currentDisplayPage = 0;  // 0-3 for 4 different pages
-const int TOTAL_DISPLAY_PAGES = 4;
+int currentDisplayPage = 0;  // 0-4 for 5 different pages
+const int TOTAL_DISPLAY_PAGES = 5;
 
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
@@ -617,47 +624,36 @@ void onDataReceive(const uint8_t *mac, const uint8_t *incomingDataPtr, int len) 
 
   memcpy(&incomingData, incomingDataPtr, sizeof(incomingData));
 
-  remoteTemp = incomingData.temperature;
-  lastRemoteTempTime = millis();
+  // Get zone ID from sensor (1-3 for remote sensors)
+  uint8_t zoneID = incomingData.sensorID;
 
-  Serial.print("ESP-NOW: Received from Zone 2 - Temp: ");
-  Serial.print(remoteTemp);
+  // Validate zone ID (remote sensors are zones 1-3)
+  if (zoneID < 1 || zoneID >= TOTAL_ZONES) {
+    Serial.print("ERROR: Invalid zone ID received: ");
+    Serial.println(zoneID);
+    return;
+  }
+
+  // Store temperature and humidity for this zone
+  zoneTemp[zoneID] = incomingData.temperature;
+  zoneHumidity[zoneID] = incomingData.humidity;
+  lastZoneTempTime[zoneID] = millis();
+
+  Serial.print("ESP-NOW: Received from Zone ");
+  Serial.print(zoneID);
+  Serial.print(" - Temp: ");
+  Serial.print(zoneTemp[zoneID]);
   Serial.print("°F, Humidity: ");
-  Serial.print(incomingData.humidity);
+  Serial.print(zoneHumidity[zoneID]);
   Serial.println("%");
 
-  // Update Blynk with remote temperature
-  Blynk.virtualWrite(REMOTE_TEMP_VPIN, remoteTemp);
+  // Update Blynk with zone temperatures
+  Blynk.virtualWrite(REMOTE_TEMP_VPIN, zoneTemp[zoneID]);  // For backward compatibility
 
-  // Update current temp based on active zone
-  updateActiveTemperature();
+  // Update current temp for thermostat control
+  currentTemp = zoneTemp[thermostatZone];
 }
 
-// Update current temperature based on selected zone
-void updateActiveTemperature() {
-  switch (activeZone) {
-    case 0:  // Zone 1 (Local sensor)
-      currentTemp = localTemp;
-      break;
-    case 1:  // Zone 2 (Remote sensor)
-      // Check if remote data is recent
-      if (millis() - lastRemoteTempTime < REMOTE_TIMEOUT) {
-        currentTemp = remoteTemp;
-      } else {
-        Serial.println("WARNING: Remote sensor data stale, using local temp");
-        currentTemp = localTemp;
-      }
-      break;
-    case 2:  // Average of both zones
-      if (millis() - lastRemoteTempTime < REMOTE_TIMEOUT) {
-        currentTemp = (localTemp + remoteTemp) / 2.0;
-      } else {
-        Serial.println("WARNING: Remote sensor offline, using local temp only");
-        currentTemp = localTemp;
-      }
-      break;
-  }
-}
 
 // Manual stove power ON
 void turnStoveOn() {
@@ -951,10 +947,14 @@ void sendData() {
 
   // Reset fail counter on successful read
   sensorFailCount = 0;
-  localTemp = f; // Store local temperature
 
-  // Update current temperature based on active zone
-  updateActiveTemperature();
+  // Store in Zone 0 (main/stove area)
+  zoneTemp[0] = f;
+  zoneHumidity[0] = h;
+  lastZoneTempTime[0] = millis();
+
+  // Update current temperature for thermostat control (Zone 0)
+  currentTemp = zoneTemp[thermostatZone];
 
   // Send data to Blynk app
   Blynk.virtualWrite(TEMP_VPIN, f);
@@ -1356,10 +1356,6 @@ void initDisplay() {
 void updateDisplay() {
   if (!displayInitialized) return;
 
-  // Calculate humidity
-  float humidity = dht.readHumidity();
-  if (isnan(humidity)) humidity = 0.0;
-
   // Get total learning samples
   int totalSamples = 0;
   for (int f = 0; f < 3; f++) {
@@ -1374,34 +1370,64 @@ void updateDisplay() {
   // Rotate through pages
   currentDisplayPage = (currentDisplayPage + 1) % TOTAL_DISPLAY_PAGES;
 
-  // ===== PAGE 0: ZONE TEMPERATURES (BIG) =====
+  // ===== PAGE 0: ZONES 0 & 1 TEMPERATURES (BIG) =====
   if (currentDisplayPage == 0) {
     lcd.setTextSize(2);
     lcd.setCursor(0, 5);
     lcd.setTextColor(ST77XX_CYAN);
-    lcd.println("TEMPERATURES");
+    lcd.println("ZONES 0 & 1");
 
+    // Zone 0 (Main/Stove)
     lcd.setTextSize(4);
     lcd.setCursor(0, 35);
     lcd.setTextColor(ST77XX_ORANGE);
-    lcd.print("Z1:");
+    lcd.print("Z0:");
     lcd.setTextColor(ST77XX_WHITE);
-    lcd.print(localTemp, 1);
+    lcd.print(zoneTemp[0], 1);
     lcd.setTextSize(2);
     lcd.print("F");
 
+    // Zone 1 (Fan 1 area)
     lcd.setTextSize(4);
     lcd.setCursor(0, 85);
-    lcd.setTextColor(ST77XX_ORANGE);
-    lcd.print("Z2:");
+    lcd.setTextColor(ST77XX_YELLOW);
+    lcd.print("Z1:");
     lcd.setTextColor(ST77XX_WHITE);
-    lcd.print(remoteTemp, 1);
+    lcd.print(zoneTemp[1], 1);
     lcd.setTextSize(2);
     lcd.print("F");
   }
 
-  // ===== PAGE 1: STOVE CONTROL =====
+  // ===== PAGE 1: ZONES 2 & 3 TEMPERATURES (BIG) =====
   else if (currentDisplayPage == 1) {
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 5);
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.println("ZONES 2 & 3");
+
+    // Zone 2 (Fan 2 area)
+    lcd.setTextSize(4);
+    lcd.setCursor(0, 35);
+    lcd.setTextColor(ST77XX_YELLOW);
+    lcd.print("Z2:");
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print(zoneTemp[2], 1);
+    lcd.setTextSize(2);
+    lcd.print("F");
+
+    // Zone 3 (Fan 3 area)
+    lcd.setTextSize(4);
+    lcd.setCursor(0, 85);
+    lcd.setTextColor(ST77XX_YELLOW);
+    lcd.print("Z3:");
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print(zoneTemp[3], 1);
+    lcd.setTextSize(2);
+    lcd.print("F");
+  }
+
+  // ===== PAGE 2: STOVE CONTROL =====
+  else if (currentDisplayPage == 2) {
     lcd.setTextSize(2);
     lcd.setCursor(0, 5);
     lcd.setTextColor(ST77XX_CYAN);
@@ -1445,8 +1471,8 @@ void updateDisplay() {
     }
   }
 
-  // ===== PAGE 2: FAN STATUS =====
-  else if (currentDisplayPage == 2) {
+  // ===== PAGE 3: FAN STATUS =====
+  else if (currentDisplayPage == 3) {
     lcd.setTextSize(2);
     lcd.setCursor(0, 5);
     lcd.setTextColor(ST77XX_CYAN);
@@ -1487,8 +1513,8 @@ void updateDisplay() {
     }
   }
 
-  // ===== PAGE 3: SYSTEM STATUS =====
-  else if (currentDisplayPage == 3) {
+  // ===== PAGE 4: SYSTEM STATUS =====
+  else if (currentDisplayPage == 4) {
     lcd.setTextSize(2);
     lcd.setCursor(0, 5);
     lcd.setTextColor(ST77XX_CYAN);
