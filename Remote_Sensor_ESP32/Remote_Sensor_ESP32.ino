@@ -6,8 +6,14 @@
 #include <esp_wifi.h>
 #include <DHT.h>
 
+// ZONE CONFIGURATION - Set this based on which zone this sensor is in
+// Zone 1 = Fan 1 area
+// Zone 2 = Fan 2 area
+// Zone 3 = Fan 3 area
+#define ZONE_ID 1       // CHANGE THIS: 1, 2, or 3
+
 // DHT11 Configuration
-#define DHTPIN 4        // GPIO4 (adjust if different)
+#define DHTPIN 13       // GPIO13 (matching main controller)
 #define DHTTYPE DHT11   // DHT11 sensor
 
 // IMPORTANT: Replace with YOUR main controller's MAC address
@@ -114,8 +120,10 @@ void setup() {
     Serial.println("✓ Main controller added as peer");
   }
 
-  // Sensor ID (useful if you have multiple remote sensors)
-  sensorData.sensorID = 1;  // Change to 2, 3, etc. for additional sensors
+  // Set Zone ID from configuration
+  sensorData.sensorID = ZONE_ID;
+  Serial.print("This sensor is configured for Zone ");
+  Serial.println(ZONE_ID);
 
   Serial.println("\n=== System Ready ===");
   Serial.println("Sending temperature data every 30 seconds...");
