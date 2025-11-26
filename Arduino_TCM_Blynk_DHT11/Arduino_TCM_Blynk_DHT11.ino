@@ -1131,61 +1131,98 @@ void sendData() {
 
 // Blynk: Stove ON button
 BLYNK_WRITE(STOVE_ON_VPIN) {
-  if (param.asInt() == 1 && !learningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V3 (STOVE_ON): ");
+  Serial.println(value);
+
+  if (value == 1 && !learningMode) {
+    Serial.println("   ✓ Executing: Turn stove ON");
     turnStoveOn();
+  } else if (learningMode) {
+    Serial.println("   ⚠️  Ignored: Learning mode active");
   }
 }
 
 // Blynk: Stove OFF button
 BLYNK_WRITE(STOVE_OFF_VPIN) {
-  if (param.asInt() == 1 && !learningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V4 (STOVE_OFF): ");
+  Serial.println(value);
+
+  if (value == 1 && !learningMode) {
+    Serial.println("   ✓ Executing: Turn stove OFF");
     turnStoveOff();
+  } else if (learningMode) {
+    Serial.println("   ⚠️  Ignored: Learning mode active");
   }
 }
 
 // Blynk: Manual Heat Up button
 BLYNK_WRITE(MANUAL_HEAT_UP_VPIN) {
-  if (param.asInt() == 1 && !learningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V8 (HEAT_UP): ");
+  Serial.println(value);
+
+  if (value == 1 && !learningMode) {
+    Serial.println("   ✓ Executing: Increase heat level");
     increaseHeat();
+  } else if (learningMode) {
+    Serial.println("   ⚠️  Ignored: Learning mode active");
   }
 }
 
 // Blynk: Manual Heat Down button
 BLYNK_WRITE(MANUAL_HEAT_DOWN_VPIN) {
-  if (param.asInt() == 1 && !learningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V9 (HEAT_DOWN): ");
+  Serial.println(value);
+
+  if (value == 1 && !learningMode) {
+    Serial.println("   ✓ Executing: Decrease heat level");
     decreaseHeat();
+  } else if (learningMode) {
+    Serial.println("   ⚠️  Ignored: Learning mode active");
   }
 }
 
 // Blynk: Temperature setpoint slider
 BLYNK_WRITE(TEMP_SETPOINT_VPIN) {
-  tempSetpoint = param.asFloat();
-  Serial.print("Target temperature set to: ");
+  float value = param.asFloat();
+  Serial.print("📱 BLYNK → V5 (TEMP_SETPOINT): ");
+  Serial.print(value);
+  Serial.println("°F");
+
+  tempSetpoint = value;
+  Serial.print("   ✓ Target temperature set to: ");
   Serial.print(tempSetpoint);
   Serial.println(" °F");
 }
 
 // Blynk: Auto mode switch
 BLYNK_WRITE(AUTO_MODE_VPIN) {
-  autoMode = param.asInt();
-  Serial.print("Auto mode: ");
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V6 (AUTO_MODE): ");
+  Serial.println(value);
+
+  autoMode = value;
+  Serial.print("   Auto mode: ");
   Serial.println(autoMode ? "ENABLED" : "DISABLED");
 
   if (autoMode) {
     // Check if IR codes have been learned
     if (irCode_HeatUp == 0 || irCode_HeatDown == 0) {
-      Serial.println("ERROR: Cannot enable auto mode - IR codes not learned!");
-      Serial.println("Please use Learning Mode (V7) to capture IR codes first.");
+      Serial.println("   ❌ ERROR: Cannot enable auto mode - IR codes not learned!");
+      Serial.println("   Please use Learning Mode (V7) to capture IR codes first.");
       autoMode = false;
       Blynk.virtualWrite(AUTO_MODE_VPIN, 0);
       return;
     }
 
     if (stoveIsOn) {
-      Serial.println("System will automatically adjust heat level based on temperature");
+      Serial.println("   ✓ System will automatically adjust heat level based on temperature");
       lastAdjustmentTime = millis() - adjustmentCooldown; // Allow immediate first adjustment
     } else {
-      Serial.println("Warning: Auto mode enabled but stove is OFF. Turn stove ON first!");
+      Serial.println("   ⚠️  Warning: Auto mode enabled but stove is OFF. Turn stove ON first!");
       autoMode = false;
       Blynk.virtualWrite(AUTO_MODE_VPIN, 0);
     }
@@ -1195,20 +1232,23 @@ BLYNK_WRITE(AUTO_MODE_VPIN) {
 // Blynk: Adjustment cooldown slider
 BLYNK_WRITE(COOLDOWN_VPIN) {
   int cooldownMinutes = param.asInt();
+  Serial.print("📱 BLYNK → V12 (COOLDOWN): ");
+  Serial.print(cooldownMinutes);
+  Serial.println(" min");
 
   // Validate cooldown range (5-30 minutes)
   if (cooldownMinutes < 5) {
-    Serial.println("WARNING: Cooldown too short, setting to minimum (5 minutes)");
+    Serial.println("   ⚠️  WARNING: Cooldown too short, setting to minimum (5 minutes)");
     cooldownMinutes = 5;
     Blynk.virtualWrite(COOLDOWN_VPIN, 5);
   } else if (cooldownMinutes > 30) {
-    Serial.println("WARNING: Cooldown too long, setting to maximum (30 minutes)");
+    Serial.println("   ⚠️  WARNING: Cooldown too long, setting to maximum (30 minutes)");
     cooldownMinutes = 30;
     Blynk.virtualWrite(COOLDOWN_VPIN, 30);
   }
 
   adjustmentCooldown = cooldownMinutes * 60000UL; // Convert minutes to milliseconds
-  Serial.print("Adjustment cooldown set to: ");
+  Serial.print("   ✓ Adjustment cooldown set to: ");
   Serial.print(cooldownMinutes);
   Serial.println(" minutes");
 }
@@ -1216,13 +1256,15 @@ BLYNK_WRITE(COOLDOWN_VPIN) {
 // Blynk: Manual heat level sync
 BLYNK_WRITE(HEAT_SYNC_VPIN) {
   int syncLevel = param.asInt();
+  Serial.print("📱 BLYNK → V13 (HEAT_SYNC): ");
+  Serial.println(syncLevel);
 
   // Validate heat level is in range 0-5
   if (syncLevel < 0) syncLevel = 0;
   if (syncLevel > 5) syncLevel = 5;
 
   currentHeatLevel = syncLevel;
-  Serial.print("Heat level manually synced to: ");
+  Serial.print("   ✓ Heat level manually synced to: ");
   Serial.println(currentHeatLevel);
 
   // Update display
@@ -1232,23 +1274,25 @@ BLYNK_WRITE(HEAT_SYNC_VPIN) {
   if (currentHeatLevel == 0 && stoveIsOn) {
     stoveIsOn = false;
     Blynk.virtualWrite(STOVE_STATUS_VPIN, 0);
-    Serial.println("Stove marked as OFF (heat level 0)");
+    Serial.println("   Stove marked as OFF (heat level 0)");
   }
   // If syncing to 1-5, assume stove is on
   else if (currentHeatLevel > 0 && !stoveIsOn) {
     stoveIsOn = true;
     Blynk.virtualWrite(STOVE_STATUS_VPIN, 1);
-    Serial.println("Stove marked as ON");
+    Serial.println("   Stove marked as ON");
   }
 }
 
 // Blynk: Zone selector
 BLYNK_WRITE(ZONE_SELECT_VPIN) {
   int newZone = param.asInt();
+  Serial.print("📱 BLYNK → V14 (ZONE_SELECT): ");
+  Serial.println(newZone);
 
   // Validate zone selection (must be 0-3)
   if (newZone < 0 || newZone >= TOTAL_ZONES) {
-    Serial.print("ERROR: Invalid zone selection: ");
+    Serial.print("   ❌ ERROR: Invalid zone selection: ");
     Serial.print(newZone);
     Serial.println(" - Using Zone 0 (Main)");
     newZone = 0;
@@ -1258,10 +1302,10 @@ BLYNK_WRITE(ZONE_SELECT_VPIN) {
   activeZone = newZone;
 
   const char* zoneNames[] = {"Zone 0 (Main/Stove)", "Zone 1 (Fan 1)", "Zone 2 (Fan 2)", "Zone 3 (Fan 3)"};
-  Serial.print("Active zone changed to: ");
+  Serial.print("   ✓ Active zone changed to: ");
   Serial.println(zoneNames[activeZone]);
 
-  Serial.print("Using temperature: ");
+  Serial.print("   Using temperature: ");
   Serial.print(currentTemp);
   Serial.println("°F for automation");
 }
@@ -1269,12 +1313,16 @@ BLYNK_WRITE(ZONE_SELECT_VPIN) {
 // Blynk: IR Learning mode button
 BLYNK_WRITE(LEARN_MODE_VPIN) {
   int buttonState = param.asInt();
+  Serial.print("📱 BLYNK → V7 (LEARN_MODE): ");
+  Serial.println(buttonState);
+
   if (buttonState == 1) {
     learningMode = true;
     learningStep = 0;
-    Serial.println("\n=== IR LEARNING MODE ===");
-    Serial.println("Point your pellet stove remote at the IR receiver");
-    Serial.println("Press the POWER ON button on your remote now...");
+    learningStartTime = millis();  // Start timeout timer
+    Serial.println("   ✓ IR LEARNING MODE ACTIVATED");
+    Serial.println("   Point your pellet stove remote at the IR receiver");
+    Serial.println("   Press the POWER ON button on your remote now...");
     irrecv.enableIRIn(); // Start the receiver
   }
 }
@@ -1282,53 +1330,87 @@ BLYNK_WRITE(LEARN_MODE_VPIN) {
 // Blynk: RF Learning mode button
 BLYNK_WRITE(RF_LEARN_MODE_VPIN) {
   int buttonState = param.asInt();
+  Serial.print("📱 BLYNK → V31 (RF_LEARN_MODE): ");
+  Serial.println(buttonState);
+
   if (buttonState == 1) {
     rfLearningMode = true;
     rfLearningStep = 0;
-    Serial.println("\n=== RF LEARNING MODE ===");
-    Serial.println("Point your ceiling fan remote #1 at the RF receiver");
-    Serial.println("Press the OFF button on Fan 1 remote now...");
+    rfLearningStartTime = millis();  // Start timeout timer
+    Serial.println("   ✓ RF LEARNING MODE ACTIVATED");
+    Serial.println("   Point your ceiling fan remote #1 at the RF receiver");
+    Serial.println("   Press the OFF button on Fan 1 remote now...");
     rfSwitch.enableReceive(digitalPinToInterrupt(RF_RECEIVE_PIN));
   }
 }
 
 // Fan 1 Controls
 BLYNK_WRITE(FAN1_OFF_VPIN) {
-  if (param.asInt() == 1 && !rfLearningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V16 (FAN1_OFF): ");
+  Serial.println(value);
+
+  if (value == 1 && !rfLearningMode) {
+    Serial.println("   ✓ Executing: Fan 1 OFF");
     sendRFCommand(fan1_Off, rfBitLength);
     updateFanState(0, 0);  // Fan 1, Speed 0 (OFF)
-    Serial.println("Fan 1: OFF");
+  } else if (rfLearningMode) {
+    Serial.println("   ⚠️  Ignored: RF learning mode active");
   }
 }
 
 BLYNK_WRITE(FAN1_LOW_VPIN) {
-  if (param.asInt() == 1 && !rfLearningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V17 (FAN1_LOW): ");
+  Serial.println(value);
+
+  if (value == 1 && !rfLearningMode) {
+    Serial.println("   ✓ Executing: Fan 1 LOW speed");
     sendRFCommand(fan1_Low, rfBitLength);
     updateFanState(0, 1);  // Fan 1, Speed 1 (LOW)
-    Serial.println("Fan 1: LOW speed");
+  } else if (rfLearningMode) {
+    Serial.println("   ⚠️  Ignored: RF learning mode active");
   }
 }
 
 BLYNK_WRITE(FAN1_MED_VPIN) {
-  if (param.asInt() == 1 && !rfLearningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V18 (FAN1_MED): ");
+  Serial.println(value);
+
+  if (value == 1 && !rfLearningMode) {
+    Serial.println("   ✓ Executing: Fan 1 MEDIUM speed");
     sendRFCommand(fan1_Med, rfBitLength);
     updateFanState(0, 2);  // Fan 1, Speed 2 (MED)
-    Serial.println("Fan 1: MEDIUM speed");
+  } else if (rfLearningMode) {
+    Serial.println("   ⚠️  Ignored: RF learning mode active");
   }
 }
 
 BLYNK_WRITE(FAN1_HIGH_VPIN) {
-  if (param.asInt() == 1 && !rfLearningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V19 (FAN1_HIGH): ");
+  Serial.println(value);
+
+  if (value == 1 && !rfLearningMode) {
+    Serial.println("   ✓ Executing: Fan 1 HIGH speed");
     sendRFCommand(fan1_High, rfBitLength);
     updateFanState(0, 3);  // Fan 1, Speed 3 (HIGH)
-    Serial.println("Fan 1: HIGH speed");
+  } else if (rfLearningMode) {
+    Serial.println("   ⚠️  Ignored: RF learning mode active");
   }
 }
 
 BLYNK_WRITE(FAN1_LIGHT_VPIN) {
-  if (param.asInt() == 1 && !rfLearningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V20 (FAN1_LIGHT): ");
+  Serial.println(value);
+
+  if (value == 1 && !rfLearningMode) {
+    Serial.println("   ✓ Executing: Fan 1 Light toggle");
     sendRFCommand(fan1_Light, rfBitLength);
-    Serial.println("Fan 1: Light toggled");
+  } else if (rfLearningMode) {
+    Serial.println("   ⚠️  Ignored: RF learning mode active");
   }
 }
 
