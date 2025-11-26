@@ -208,8 +208,10 @@ const unsigned long TEMP_SAMPLE_INTERVAL = 60000; // Sample every 1 minute for l
 
 // LCD Display variables
 unsigned long lastDisplayUpdate = 0;
-const unsigned long DISPLAY_UPDATE_INTERVAL = 2000; // Update display every 2 seconds
+const unsigned long DISPLAY_UPDATE_INTERVAL = 4000; // Update display every 4 seconds (page rotation)
 bool displayInitialized = false;
+int currentDisplayPage = 0;  // 0-3 for 4 different pages
+const int TOTAL_DISPLAY_PAGES = 4;
 
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
@@ -1354,21 +1356,11 @@ void initDisplay() {
 void updateDisplay() {
   if (!displayInitialized) return;
 
-  // Get current temperature for display
-  float displayTemp = currentTemp;
-  if (activeZone == 0) {
-    displayTemp = localTemp;
-  } else if (activeZone == 1) {
-    displayTemp = remoteTemp;
-  } else {
-    displayTemp = (localTemp + remoteTemp) / 2.0;
-  }
-
   // Calculate humidity
   float humidity = dht.readHumidity();
   if (isnan(humidity)) humidity = 0.0;
 
-  // Get total learning samples across all fans/speeds
+  // Get total learning samples
   int totalSamples = 0;
   for (int f = 0; f < 3; f++) {
     for (int s = 0; s < 4; s++) {
@@ -1379,183 +1371,163 @@ void updateDisplay() {
   // Clear screen
   lcd.fillScreen(ST77XX_BLACK);
 
-  // ===== LINE 1: Header with status indicators (0-18px) =====
-  lcd.setTextSize(1);
-  lcd.setCursor(0, 2);
-  lcd.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-  lcd.print("STOVE CTRL");
+  // Rotate through pages
+  currentDisplayPage = (currentDisplayPage + 1) % TOTAL_DISPLAY_PAGES;
 
-  // WiFi status
-  lcd.setCursor(155, 2);
-  if (WiFi.status() == WL_CONNECTED) {
-    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    lcd.print("W");
-  } else {
-    lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
-    lcd.print("W");
+  // ===== PAGE 0: ZONE TEMPERATURES (BIG) =====
+  if (currentDisplayPage == 0) {
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 5);
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.println("TEMPERATURES");
+
+    lcd.setTextSize(4);
+    lcd.setCursor(0, 35);
+    lcd.setTextColor(ST77XX_ORANGE);
+    lcd.print("Z1:");
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print(localTemp, 1);
+    lcd.setTextSize(2);
+    lcd.print("F");
+
+    lcd.setTextSize(4);
+    lcd.setCursor(0, 85);
+    lcd.setTextColor(ST77XX_ORANGE);
+    lcd.print("Z2:");
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print(remoteTemp, 1);
+    lcd.setTextSize(2);
+    lcd.print("F");
   }
 
-  // Blynk status
-  lcd.setCursor(170, 2);
-  if (Blynk.connected()) {
-    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    lcd.print("B");
-  } else {
-    lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
-    lcd.print("B");
-  }
+  // ===== PAGE 1: STOVE CONTROL =====
+  else if (currentDisplayPage == 1) {
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 5);
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.println("STOVE CONTROL");
 
-  // Auto mode indicator
-  lcd.setCursor(185, 2);
-  if (autoMode) {
-    lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    lcd.print("AUTO");
-  } else {
-    lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-    lcd.print("MAN");
-  }
+    // Target temp
+    lcd.setTextSize(3);
+    lcd.setCursor(0, 35);
+    lcd.setTextColor(ST77XX_GREEN);
+    lcd.print("Target:");
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print(tempSetpoint, 0);
+    lcd.setTextSize(2);
+    lcd.print("F");
 
-  // ===== LINE 2: Zone 1 temp, humidity, target (20-38px) =====
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(0, 20);
-  lcd.print("Z1:");
-  lcd.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
-  lcd.print(localTemp, 1);
-  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-  lcd.print("F");
+    // Heat level with BIG blocks
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 75);
+    lcd.setTextColor(ST77XX_YELLOW);
+    lcd.print("Heat: ");
+    lcd.setTextSize(3);
+    for (int i = 1; i <= 5; i++) {
+      if (stoveIsOn && i <= currentHeatLevel) {
+        lcd.setTextColor(ST77XX_RED);
+        lcd.print("#");
+      } else {
+        lcd.setTextColor(0x4208);
+        lcd.print("-");
+      }
+    }
 
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(75, 20);
-  lcd.print("H:");
-  lcd.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-  lcd.print((int)humidity);
-  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-  lcd.print("%");
-
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(135, 20);
-  lcd.print("Tgt:");
-  lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  lcd.print(tempSetpoint, 0);
-  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-  lcd.print("F");
-
-  // ===== LINE 3: Zone 2 temp and heat level (40-58px) =====
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(0, 40);
-  lcd.print("Z2:");
-  lcd.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
-  lcd.print(remoteTemp, 1);
-  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-  lcd.print("F");
-
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(75, 40);
-  lcd.print("Heat:");
-
-  // Draw heat level blocks
-  lcd.setCursor(115, 40);
-  for (int i = 1; i <= 5; i++) {
-    if (stoveIsOn && i <= currentHeatLevel) {
-      lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
-      lcd.print((char)219); // Full block character
+    // Stove status
+    lcd.setTextSize(3);
+    lcd.setCursor(0, 110);
+    if (stoveIsOn) {
+      lcd.setTextColor(ST77XX_RED);
+      lcd.print("STOVE ON");
     } else {
-      lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-      lcd.print((char)176); // Light block character
+      lcd.setTextColor(0x7BEF);
+      lcd.print("STOVE OFF");
     }
   }
 
-  // Stove status
-  lcd.setCursor(165, 40);
-  if (stoveIsOn) {
-    lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
-    lcd.print("ON");
-  } else {
-    lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-    lcd.print("OFF");
+  // ===== PAGE 2: FAN STATUS =====
+  else if (currentDisplayPage == 2) {
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 5);
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.println("CEILING FANS");
+
+    // Fan 1
+    lcd.setTextSize(3);
+    lcd.setCursor(0, 35);
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print("F1: ");
+    switch (fan1State.speed) {
+      case 0: lcd.setTextColor(0x7BEF); lcd.print("OFF"); break;
+      case 1: lcd.setTextColor(ST77XX_GREEN); lcd.print("LOW"); break;
+      case 2: lcd.setTextColor(ST77XX_YELLOW); lcd.print("MED"); break;
+      case 3: lcd.setTextColor(ST77XX_RED); lcd.print("HIGH"); break;
+    }
+
+    // Fan 2
+    lcd.setCursor(0, 70);
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print("F2: ");
+    switch (fan2State.speed) {
+      case 0: lcd.setTextColor(0x7BEF); lcd.print("OFF"); break;
+      case 1: lcd.setTextColor(ST77XX_GREEN); lcd.print("LOW"); break;
+      case 2: lcd.setTextColor(ST77XX_YELLOW); lcd.print("MED"); break;
+      case 3: lcd.setTextColor(ST77XX_RED); lcd.print("HIGH"); break;
+    }
+
+    // Fan 3
+    lcd.setCursor(0, 105);
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print("F3: ");
+    switch (fan3State.speed) {
+      case 0: lcd.setTextColor(0x7BEF); lcd.print("OFF"); break;
+      case 1: lcd.setTextColor(ST77XX_GREEN); lcd.print("LOW"); break;
+      case 2: lcd.setTextColor(ST77XX_YELLOW); lcd.print("MED"); break;
+      case 3: lcd.setTextColor(ST77XX_RED); lcd.print("HIGH"); break;
+    }
   }
 
-  // ===== LINE 4: Separator (60px) =====
-  lcd.setCursor(0, 60);
-  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-  lcd.println("------------------------");
+  // ===== PAGE 3: SYSTEM STATUS =====
+  else if (currentDisplayPage == 3) {
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 5);
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.println("SYSTEM STATUS");
 
-  // ===== LINE 5: Fan statuses (70-88px) =====
-  lcd.setCursor(0, 70);
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    // WiFi
+    lcd.setTextSize(3);
+    lcd.setCursor(0, 35);
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print("WiFi: ");
+    if (WiFi.status() == WL_CONNECTED) {
+      lcd.setTextColor(ST77XX_GREEN);
+      lcd.print("OK");
+    } else {
+      lcd.setTextColor(ST77XX_RED);
+      lcd.print("NO");
+    }
 
-  // Fan 1
-  lcd.print("F1:");
-  switch (fan1State.speed) {
-    case 0: lcd.setTextColor(0x7BEF, ST77XX_BLACK); lcd.print("OFF"); break;
-    case 1: lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK); lcd.print("LOW"); break;
-    case 2: lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK); lcd.print("MED"); break;
-    case 3: lcd.setTextColor(ST77XX_RED, ST77XX_BLACK); lcd.print("HI "); break;
+    // Auto mode
+    lcd.setCursor(0, 70);
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print("Mode: ");
+    if (autoMode) {
+      lcd.setTextColor(ST77XX_YELLOW);
+      lcd.print("AUTO");
+    } else {
+      lcd.setTextColor(0x7BEF);
+      lcd.print("MAN");
+    }
+
+    // Learning samples
+    lcd.setTextSize(2);
+    lcd.setCursor(0, 105);
+    lcd.setTextColor(ST77XX_WHITE);
+    lcd.print("Learning: ");
+    lcd.setTextColor(ST77XX_CYAN);
+    lcd.print(totalSamples);
+    lcd.print(" samples");
   }
-
-  // Fan 2
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(65, 70);
-  lcd.print("F2:");
-  switch (fan2State.speed) {
-    case 0: lcd.setTextColor(0x7BEF, ST77XX_BLACK); lcd.print("OFF"); break;
-    case 1: lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK); lcd.print("LOW"); break;
-    case 2: lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK); lcd.print("MED"); break;
-    case 3: lcd.setTextColor(ST77XX_RED, ST77XX_BLACK); lcd.print("HI "); break;
-  }
-
-  // Fan 3
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(130, 70);
-  lcd.print("F3:");
-  switch (fan3State.speed) {
-    case 0: lcd.setTextColor(0x7BEF, ST77XX_BLACK); lcd.print("OFF"); break;
-    case 1: lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK); lcd.print("LOW"); break;
-    case 2: lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK); lcd.print("MED"); break;
-    case 3: lcd.setTextColor(ST77XX_RED, ST77XX_BLACK); lcd.print("HI "); break;
-  }
-
-  // ===== LINE 6: Learning status and auto-equalization (90-108px) =====
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(0, 90);
-  lcd.print("Learn:");
-  lcd.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-  lcd.print(totalSamples);
-
-  // Auto-equalization status
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(80, 90);
-  lcd.print("AutoEQ:");
-  if (autoEqualizationMode) {
-    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    lcd.print("ON");
-  } else {
-    lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-    lcd.print("OFF");
-  }
-
-  // ===== LINE 7: Temperature difference and zone indicator (110-128px) =====
-  float tempDiff = abs(localTemp - remoteTemp);
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(0, 110);
-  lcd.print("Diff:");
-  if (tempDiff > tempDifferenceThreshold) {
-    lcd.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
-  } else {
-    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  }
-  lcd.print(tempDiff, 1);
-  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
-  lcd.print("F");
-
-  // Active zone indicator
-  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  lcd.setCursor(80, 110);
-  lcd.print("Zone:");
-  lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  if (activeZone == 0) lcd.print("1");
-  else if (activeZone == 1) lcd.print("2");
-  else lcd.print("AVG");
 }
 
 void setup() {
@@ -1627,8 +1599,8 @@ void setup() {
   // Set timer for auto-equalization (every 5 minutes)
   timer.setInterval(300000L, autoEqualizeTemperatures);
 
-  // Set timer for LCD display updates (every 2 seconds)
-  timer.setInterval(2000L, updateDisplay);
+  // Set timer for LCD display updates (every 4 seconds - page rotation)
+  timer.setInterval(4000L, updateDisplay);
 
   // Send initial status to Blynk
   Blynk.virtualWrite(STOVE_STATUS_VPIN, stoveIsOn ? 1 : 0);
