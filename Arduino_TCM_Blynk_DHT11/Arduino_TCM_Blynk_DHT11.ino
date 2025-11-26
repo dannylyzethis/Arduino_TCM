@@ -600,7 +600,7 @@ void autoEqualizeTemperatures() {
 // ===== END TEMPERATURE EQUALIZATION LEARNING SYSTEM =====
 
 // ESP-NOW callback when data is received from remote sensor
-void onDataReceive(const uint8_t * mac, const uint8_t *incomingDataPtr, int len) {
+void onDataReceive(const esp_now_recv_info_t *recv_info, const uint8_t *incomingDataPtr, int len) {
   // Validate data size to prevent memory corruption
   if (len != sizeof(incomingData)) {
     Serial.print("ERROR: Received invalid ESP-NOW packet size: ");
