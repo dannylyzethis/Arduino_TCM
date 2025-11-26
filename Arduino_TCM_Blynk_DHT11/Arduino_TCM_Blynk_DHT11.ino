@@ -1824,6 +1824,9 @@ void processSerialCommand() {
     Serial.println("  FAN2 OFF/LOW/MED/HIGH");
     Serial.println("  FAN3 OFF/LOW/MED/HIGH");
     Serial.println("  FANS OFF      - Turn all fans off");
+    Serial.println("\nLEARNING COMMANDS:");
+    Serial.println("  LEARN IR      - Learn stove remote IR codes");
+    Serial.println("  LEARN RF      - Learn fan remote RF codes");
     Serial.println("\nSYSTEM COMMANDS:");
     Serial.println("  STATUS        - Show full system status");
     Serial.println("  WIFI          - Show WiFi status");
@@ -2016,6 +2019,45 @@ void processSerialCommand() {
     initLearningModel();
     saveLearningData();
     Serial.println("✓ Learning data reset complete!");
+    return;
+  }
+
+  // LEARN IR command
+  if (cmd == "LEARN IR" || cmd == "LEARNIR") {
+    learningMode = true;
+    learningStep = 0;
+    Serial.println("\n========================================");
+    Serial.println("       IR LEARNING MODE ACTIVATED");
+    Serial.println("========================================");
+    Serial.println("\nPoint your pellet stove remote at the");
+    Serial.println("IR receiver (GPIO14)");
+    Serial.println("\nYou will capture 4 codes:");
+    Serial.println("  1. Power ON");
+    Serial.println("  2. Power OFF");
+    Serial.println("  3. Heat UP");
+    Serial.println("  4. Heat DOWN");
+    Serial.println("\nPress POWER ON button now...");
+    Serial.println("========================================\n");
+    irrecv.enableIRIn(); // Start the receiver
+    return;
+  }
+
+  // LEARN RF command
+  if (cmd == "LEARN RF" || cmd == "LEARNRF") {
+    rfLearningMode = true;
+    rfLearningStep = 0;
+    Serial.println("\n========================================");
+    Serial.println("       RF LEARNING MODE ACTIVATED");
+    Serial.println("========================================");
+    Serial.println("\nPoint your ceiling fan remotes at the");
+    Serial.println("RF receiver (GPIO17)");
+    Serial.println("\nYou will capture 15 codes:");
+    Serial.println("  Fan 1: OFF, LOW, MED, HIGH, LIGHT (5)");
+    Serial.println("  Fan 2: OFF, LOW, MED, HIGH, LIGHT (5)");
+    Serial.println("  Fan 3: OFF, LOW, MED, HIGH, LIGHT (5)");
+    Serial.println("\nPress Fan 1 OFF button now...");
+    Serial.println("========================================\n");
+    rfSwitch.enableReceive(digitalPinToInterrupt(RF_RECEIVE_PIN));
     return;
   }
 
