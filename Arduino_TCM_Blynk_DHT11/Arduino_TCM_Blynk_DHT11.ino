@@ -1416,10 +1416,15 @@ BLYNK_WRITE(FAN1_LIGHT_VPIN) {
 
 // Fan 2 Controls
 BLYNK_WRITE(FAN2_OFF_VPIN) {
-  if (param.asInt() == 1 && !rfLearningMode) {
+  int value = param.asInt();
+  Serial.print("📱 BLYNK → V21 (FAN2_OFF): ");
+  Serial.println(value);
+  if (value == 1 && !rfLearningMode) {
+    Serial.println("   ✓ Executing: Fan 2 OFF");
     sendRFCommand(fan2_Off, rfBitLength);
-    updateFanState(1, 0);  // Fan 2, Speed 0 (OFF)
-    Serial.println("Fan 2: OFF");
+    updateFanState(1, 0);
+  } else if (rfLearningMode) {
+    Serial.println("   ⚠️  Ignored: RF learning mode active");
   }
 }
 
