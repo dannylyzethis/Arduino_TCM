@@ -923,31 +923,55 @@ void checkTemperatureControl() {
 
 // Read and send sensor data
 void sendData() {
+  Serial.println("\n========== DHT11 SENSOR READ ==========");
+
   // Read temperature and humidity from DHT11
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   float f = (t * 9.0 / 5.0) + 32.0;
 
+  // Show raw readings first
+  Serial.print("RAW Humidity: ");
+  Serial.print(h);
+  Serial.println(" %");
+  Serial.print("RAW Temp (C): ");
+  Serial.print(t);
+  Serial.println(" °C");
+  Serial.print("Converted (F): ");
+  Serial.print(f);
+  Serial.println(" °F");
+
   // Check if readings failed
   if (isnan(h) || isnan(t)) {
     sensorFailCount++;
-    Serial.print("Failed to read from DHT sensor! (Fail count: ");
+    Serial.println("❌ SENSOR READ FAILED!");
+    Serial.print("⚠️  Fail count: ");
     Serial.print(sensorFailCount);
     Serial.print("/");
-    Serial.print(MAX_SENSOR_FAILS);
-    Serial.println(")");
+    Serial.println(MAX_SENSOR_FAILS);
+
+    // Check sensor connection
+    Serial.println("\n🔧 TROUBLESHOOTING:");
+    Serial.println("   1. Check DHT11 is connected to GPIO13");
+    Serial.println("   2. Check VCC → 3.3V");
+    Serial.println("   3. Check GND → GND");
+    Serial.println("   4. Check DATA → GPIO13");
+    Serial.println("   5. Wait 2 seconds between readings");
 
     // Disable auto mode if sensor fails too many times
     if (sensorFailCount >= MAX_SENSOR_FAILS && autoMode) {
-      Serial.println("CRITICAL: Sensor failed multiple times - disabling auto mode for safety");
+      Serial.println("\n❌ CRITICAL: Sensor failed multiple times!");
+      Serial.println("   AUTO MODE DISABLED FOR SAFETY");
       autoMode = false;
       Blynk.virtualWrite(AUTO_MODE_VPIN, 0);
     }
+    Serial.println("=======================================\n");
     return;
   }
 
   // Reset fail counter on successful read
   sensorFailCount = 0;
+  Serial.println("✓ Sensor read SUCCESS!");
 
   // Store in Zone 0 (main/stove area)
   zoneTemp[0] = f;
@@ -961,22 +985,49 @@ void sendData() {
   Blynk.virtualWrite(TEMP_VPIN, f);
   Blynk.virtualWrite(HUM_VPIN, h);
 
-  // Print readings to serial monitor
-  Serial.print("Temperature: ");
-  Serial.print(t);
-  Serial.print(" °C / ");
-  Serial.print(f);
-  Serial.println(" °F");
-  Serial.print("Humidity: ");
-  Serial.print(h);
-  Serial.println(" %");
+  // Print all zone temperatures
+  Serial.println("\n--- ALL ZONES STATUS ---");
+  for (int i = 0; i < TOTAL_ZONES; i++) {
+    Serial.print("Zone ");
+    Serial.print(i);
+    Serial.print(": ");
 
+    // Check if zone data is recent
+    unsigned long timeSinceUpdate = millis() - lastZoneTempTime[i];
+    if (timeSinceUpdate < REMOTE_TIMEOUT || i == 0) {
+      Serial.print(zoneTemp[i], 1);
+      Serial.print("°F, ");
+      Serial.print(zoneHumidity[i], 0);
+      Serial.print("%");
+
+      if (i == 0) {
+        Serial.print(" (LOCAL)");
+      } else {
+        Serial.print(" (");
+        Serial.print(timeSinceUpdate / 1000);
+        Serial.print("s ago)");
+      }
+
+      if (i == thermostatZone) {
+        Serial.print(" ← THERMOSTAT");
+      }
+      Serial.println();
+    } else {
+      Serial.println("OFFLINE (no data)");
+    }
+  }
+
+  // Stove status
+  Serial.println("\n--- STOVE STATUS ---");
   if (stoveIsOn) {
     Serial.print("Stove: ON | Heat Level: ");
     Serial.print(currentHeatLevel);
+    Serial.print("/5");
     if (autoMode) {
       Serial.print(" | AUTO Mode | Target: ");
       Serial.print(tempSetpoint);
+      Serial.print("°F | Current: ");
+      Serial.print(currentTemp, 1);
       Serial.print("°F");
     } else {
       Serial.print(" | MANUAL Mode");
@@ -985,6 +1036,8 @@ void sendData() {
   } else {
     Serial.println("Stove: OFF");
   }
+
+  Serial.println("=======================================\n");
 
   // Check if automation should adjust heat level
   checkTemperatureControl();
