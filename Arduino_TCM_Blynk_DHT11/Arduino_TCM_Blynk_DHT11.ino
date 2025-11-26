@@ -1742,9 +1742,244 @@ void setup() {
 
   // Initial display update
   updateDisplay();
+
+  Serial.println("\n========================================");
+  Serial.println("  SERIAL COMMAND INTERFACE READY");
+  Serial.println("  Type 'HELP' for available commands");
+  Serial.println("========================================\n");
+}
+
+// ==================== SERIAL COMMAND HANDLER ====================
+
+void processSerialCommand() {
+  if (!Serial.available()) return;
+
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  cmd.toUpperCase();
+
+  Serial.print("\n> ");
+  Serial.println(cmd);
+
+  // HELP command
+  if (cmd == "HELP" || cmd == "?") {
+    Serial.println("\n=== AVAILABLE COMMANDS ===");
+    Serial.println("\nSENSOR COMMANDS:");
+    Serial.println("  TEMP          - Read temperature now");
+    Serial.println("  ZONES         - Show all zone status");
+    Serial.println("\nSTOVE COMMANDS:");
+    Serial.println("  ON            - Turn stove ON");
+    Serial.println("  OFF           - Turn stove OFF");
+    Serial.println("  HEAT <1-5>    - Set heat level (1-5)");
+    Serial.println("  AUTO          - Enable auto mode");
+    Serial.println("  MANUAL        - Disable auto mode");
+    Serial.println("  TARGET <60-80>- Set target temp (°F)");
+    Serial.println("\nFAN COMMANDS:");
+    Serial.println("  FAN1 OFF/LOW/MED/HIGH");
+    Serial.println("  FAN2 OFF/LOW/MED/HIGH");
+    Serial.println("  FAN3 OFF/LOW/MED/HIGH");
+    Serial.println("  FANS OFF      - Turn all fans off");
+    Serial.println("\nSYSTEM COMMANDS:");
+    Serial.println("  STATUS        - Show full system status");
+    Serial.println("  WIFI          - Show WiFi status");
+    Serial.println("  RESET         - Reset learning data");
+    Serial.println("==========================\n");
+    return;
+  }
+
+  // TEMP command
+  if (cmd == "TEMP") {
+    sendData();  // Force immediate temp read
+    return;
+  }
+
+  // ZONES command
+  if (cmd == "ZONES") {
+    Serial.println("\n--- ALL ZONES ---");
+    for (int i = 0; i < TOTAL_ZONES; i++) {
+      Serial.print("Zone ");
+      Serial.print(i);
+      Serial.print(": ");
+      unsigned long age = (millis() - lastZoneTempTime[i]) / 1000;
+      if (age < 300 || i == 0) {
+        Serial.print(zoneTemp[i], 1);
+        Serial.print("°F, ");
+        Serial.print(zoneHumidity[i], 0);
+        Serial.print("% (");
+        Serial.print(age);
+        Serial.println("s ago)");
+      } else {
+        Serial.println("OFFLINE");
+      }
+    }
+    Serial.println();
+    return;
+  }
+
+  // STATUS command
+  if (cmd == "STATUS") {
+    Serial.println("\n=== SYSTEM STATUS ===");
+    Serial.print("Stove: ");
+    Serial.println(stoveIsOn ? "ON" : "OFF");
+    Serial.print("Heat Level: ");
+    Serial.print(currentHeatLevel);
+    Serial.println("/5");
+    Serial.print("Mode: ");
+    Serial.println(autoMode ? "AUTO" : "MANUAL");
+    Serial.print("Target: ");
+    Serial.print(tempSetpoint);
+    Serial.println("°F");
+    Serial.print("Current: ");
+    Serial.print(currentTemp);
+    Serial.println("°F");
+    Serial.print("WiFi: ");
+    Serial.println(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+    Serial.print("Fan 1: ");
+    Serial.println(fan1State.speed == 0 ? "OFF" : fan1State.speed == 1 ? "LOW" : fan1State.speed == 2 ? "MED" : "HIGH");
+    Serial.print("Fan 2: ");
+    Serial.println(fan2State.speed == 0 ? "OFF" : fan2State.speed == 1 ? "LOW" : fan2State.speed == 2 ? "MED" : "HIGH");
+    Serial.print("Fan 3: ");
+    Serial.println(fan3State.speed == 0 ? "OFF" : fan3State.speed == 1 ? "LOW" : fan3State.speed == 2 ? "MED" : "HIGH");
+    Serial.println("=====================\n");
+    return;
+  }
+
+  // ON command
+  if (cmd == "ON") {
+    Serial.println("✓ Turning stove ON");
+    turnStoveOn();
+    return;
+  }
+
+  // OFF command
+  if (cmd == "OFF") {
+    Serial.println("✓ Turning stove OFF");
+    turnStoveOff();
+    return;
+  }
+
+  // AUTO command
+  if (cmd == "AUTO") {
+    autoMode = true;
+    Serial.println("✓ AUTO mode enabled");
+    return;
+  }
+
+  // MANUAL command
+  if (cmd == "MANUAL") {
+    autoMode = false;
+    Serial.println("✓ MANUAL mode enabled");
+    return;
+  }
+
+  // FANS OFF command
+  if (cmd == "FANS OFF") {
+    Serial.println("✓ Turning all fans OFF");
+    if (fan1_Off) sendRFCommand(fan1_Off, rfBitLength);
+    if (fan2_Off) sendRFCommand(fan2_Off, rfBitLength);
+    if (fan3_Off) sendRFCommand(fan3_Off, rfBitLength);
+    updateFanState(0, 0);
+    updateFanState(1, 0);
+    updateFanState(2, 0);
+    return;
+  }
+
+  // HEAT <level> command
+  if (cmd.startsWith("HEAT ")) {
+    int level = cmd.substring(5).toInt();
+    if (level >= 1 && level <= 5) {
+      currentHeatLevel = level;
+      Serial.print("✓ Heat level set to ");
+      Serial.println(level);
+      if (stoveIsOn) {
+        adjustHeatLevel(level);
+      }
+    } else {
+      Serial.println("❌ Invalid heat level (use 1-5)");
+    }
+    return;
+  }
+
+  // TARGET <temp> command
+  if (cmd.startsWith("TARGET ")) {
+    int temp = cmd.substring(7).toInt();
+    if (temp >= 60 && temp <= 80) {
+      tempSetpoint = temp;
+      Serial.print("✓ Target temperature set to ");
+      Serial.print(temp);
+      Serial.println("°F");
+    } else {
+      Serial.println("❌ Invalid temp (use 60-80°F)");
+    }
+    return;
+  }
+
+  // FAN commands
+  if (cmd.startsWith("FAN1 ")) {
+    String speed = cmd.substring(5);
+    Serial.print("✓ Fan 1 → ");
+    Serial.println(speed);
+    if (speed == "OFF") { sendRFCommand(fan1_Off, rfBitLength); updateFanState(0, 0); }
+    else if (speed == "LOW") { sendRFCommand(fan1_Low, rfBitLength); updateFanState(0, 1); }
+    else if (speed == "MED") { sendRFCommand(fan1_Med, rfBitLength); updateFanState(0, 2); }
+    else if (speed == "HIGH") { sendRFCommand(fan1_High, rfBitLength); updateFanState(0, 3); }
+    else Serial.println("❌ Invalid speed (OFF/LOW/MED/HIGH)");
+    return;
+  }
+
+  if (cmd.startsWith("FAN2 ")) {
+    String speed = cmd.substring(5);
+    Serial.print("✓ Fan 2 → ");
+    Serial.println(speed);
+    if (speed == "OFF") { sendRFCommand(fan2_Off, rfBitLength); updateFanState(1, 0); }
+    else if (speed == "LOW") { sendRFCommand(fan2_Low, rfBitLength); updateFanState(1, 1); }
+    else if (speed == "MED") { sendRFCommand(fan2_Med, rfBitLength); updateFanState(1, 2); }
+    else if (speed == "HIGH") { sendRFCommand(fan2_High, rfBitLength); updateFanState(1, 3); }
+    else Serial.println("❌ Invalid speed (OFF/LOW/MED/HIGH)");
+    return;
+  }
+
+  if (cmd.startsWith("FAN3 ")) {
+    String speed = cmd.substring(5);
+    Serial.print("✓ Fan 3 → ");
+    Serial.println(speed);
+    if (speed == "OFF") { sendRFCommand(fan3_Off, rfBitLength); updateFanState(2, 0); }
+    else if (speed == "LOW") { sendRFCommand(fan3_Low, rfBitLength); updateFanState(2, 1); }
+    else if (speed == "MED") { sendRFCommand(fan3_Med, rfBitLength); updateFanState(2, 2); }
+    else if (speed == "HIGH") { sendRFCommand(fan3_High, rfBitLength); updateFanState(2, 3); }
+    else Serial.println("❌ Invalid speed (OFF/LOW/MED/HIGH)");
+    return;
+  }
+
+  // WIFI command
+  if (cmd == "WIFI") {
+    Serial.print("WiFi Status: ");
+    Serial.println(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print("IP: ");
+      Serial.println(WiFi.localIP());
+      Serial.print("RSSI: ");
+      Serial.print(WiFi.RSSI());
+      Serial.println(" dBm");
+    }
+    return;
+  }
+
+  // RESET command
+  if (cmd == "RESET") {
+    Serial.println("⚠️  Resetting all learning data...");
+    initLearningModel();
+    saveLearningData();
+    Serial.println("✓ Learning data reset complete!");
+    return;
+  }
+
+  // Unknown command
+  Serial.println("❌ Unknown command. Type HELP for available commands.");
 }
 
 void loop() {
   Blynk.run();
   timer.run();
+  processSerialCommand();  // Check for serial commands
 }
