@@ -148,6 +148,8 @@ decode_type_t irProtocol = UNKNOWN; // Will be detected when learning
 // Learning mode
 bool learningMode = false;
 int learningStep = 0;  // 0=PowerOn, 1=PowerOff, 2=HeatUp, 3=HeatDown
+unsigned long learningStartTime = 0;
+const unsigned long LEARNING_TIMEOUT = 60000;  // 60 second timeout for each code
 
 // RF code storage for ceiling fans (433MHz)
 // Fan 1 codes
@@ -175,6 +177,8 @@ unsigned long fan3_Light = 0;
 bool rfLearningMode = false;
 int rfLearningStep = 0;  // 0-4: Fan1 codes, 5-9: Fan2 codes, 10-14: Fan3 codes
 int rfBitLength = 24;    // Default bit length (will be detected)
+unsigned long rfLearningStartTime = 0;
+const unsigned long RF_LEARNING_TIMEOUT = 60000;  // 60 second timeout for each code
 
 // Temperature Equalization Learning System
 #define MAX_LEARNING_SAMPLES 50  // Store up to 50 learning samples per fan/speed combination
@@ -777,6 +781,22 @@ void adjustHeatLevel(int targetLevel) {
 void checkForIRSignal() {
   if (!learningMode) return;
 
+  // Check for timeout
+  if (millis() - learningStartTime > LEARNING_TIMEOUT) {
+    Serial.println("\n❌ TIMEOUT: No IR signal received for 60 seconds");
+    Serial.println("⚠️  Possible issues:");
+    Serial.println("   - IR receiver not connected to GPIO14");
+    Serial.println("   - IR receiver not powered (VCC → 3.3V, GND → GND)");
+    Serial.println("   - Remote batteries dead");
+    Serial.println("   - Remote not pointed at receiver");
+    Serial.println("   - Wrong remote (not for pellet stove)");
+    Serial.println("\n💡 Type 'LEARN IR' to try again or 'CANCEL' to exit");
+    learningMode = false;
+    learningStep = 0;
+    Blynk.virtualWrite(LEARN_MODE_VPIN, 0);
+    return;
+  }
+
   if (irrecv.decode(&results)) {
     Serial.println("IR Signal Received!");
     Serial.print("Protocol: ");
@@ -794,16 +814,19 @@ void checkForIRSignal() {
           irProtocol = results.decode_type;
           Serial.println("✓ Power ON learned! Now press POWER OFF on your remote...");
           learningStep = 1;
+          learningStartTime = millis();  // Reset timeout for next button
           break;
         case 1:
           irCode_PowerOff = results.value;
           Serial.println("✓ Power OFF learned! Now press HEAT UP on your remote...");
           learningStep = 2;
+          learningStartTime = millis();  // Reset timeout for next button
           break;
         case 2:
           irCode_HeatUp = results.value;
           Serial.println("✓ Heat Up learned! Now press HEAT DOWN on your remote...");
           learningStep = 3;
+          learningStartTime = millis();  // Reset timeout for next button
           break;
         case 3:
           irCode_HeatDown = results.value;
@@ -836,6 +859,23 @@ void checkForIRSignal() {
 // RF Learning function
 void checkForRFSignal() {
   if (!rfLearningMode) return;
+
+  // Check for timeout
+  if (millis() - rfLearningStartTime > RF_LEARNING_TIMEOUT) {
+    Serial.println("\n❌ TIMEOUT: No RF signal received for 60 seconds");
+    Serial.println("⚠️  Possible issues:");
+    Serial.println("   - RF receiver not connected to GPIO17");
+    Serial.println("   - RF receiver not powered (VCC → 5V, GND → GND)");
+    Serial.println("   - Remote batteries dead");
+    Serial.println("   - Remote not 433MHz (check frequency)");
+    Serial.println("   - Remote too far from receiver");
+    Serial.println("   - Wrong remote (not for ceiling fan)");
+    Serial.println("\n💡 Type 'LEARN RF' to try again or 'CANCEL' to exit");
+    rfLearningMode = false;
+    rfLearningStep = 0;
+    Blynk.virtualWrite(RF_LEARN_MODE_VPIN, 0);
+    return;
+  }
 
   if (rfSwitch.available()) {
     unsigned long code = rfSwitch.getReceivedValue();
@@ -887,6 +927,7 @@ void checkForRFSignal() {
       Serial.println(" learned!");
 
       rfLearningStep++;
+      rfLearningStartTime = millis();  // Reset timeout for next button
 
       if (rfLearningStep < 15) {
         Serial.print("Now press ");
@@ -1827,6 +1868,10 @@ void processSerialCommand() {
     Serial.println("\nLEARNING COMMANDS:");
     Serial.println("  LEARN IR      - Learn stove remote IR codes");
     Serial.println("  LEARN RF      - Learn fan remote RF codes");
+    Serial.println("  CANCEL        - Exit learning mode");
+    Serial.println("\nHARDWARE TEST COMMANDS:");
+    Serial.println("  TEST IR       - Test IR transmitter");
+    Serial.println("  TEST RF       - Test RF transmitter");
     Serial.println("\nSYSTEM COMMANDS:");
     Serial.println("  STATUS        - Show full system status");
     Serial.println("  WIFI          - Show WiFi status");
@@ -2026,6 +2071,7 @@ void processSerialCommand() {
   if (cmd == "LEARN IR" || cmd == "LEARNIR") {
     learningMode = true;
     learningStep = 0;
+    learningStartTime = millis();  // Start timeout timer
     Serial.println("\n========================================");
     Serial.println("       IR LEARNING MODE ACTIVATED");
     Serial.println("========================================");
@@ -2037,6 +2083,8 @@ void processSerialCommand() {
     Serial.println("  3. Heat UP");
     Serial.println("  4. Heat DOWN");
     Serial.println("\nPress POWER ON button now...");
+    Serial.println("(60 second timeout per button)");
+    Serial.println("Type 'CANCEL' to exit learning mode");
     Serial.println("========================================\n");
     irrecv.enableIRIn(); // Start the receiver
     return;
@@ -2046,6 +2094,7 @@ void processSerialCommand() {
   if (cmd == "LEARN RF" || cmd == "LEARNRF") {
     rfLearningMode = true;
     rfLearningStep = 0;
+    rfLearningStartTime = millis();  // Start timeout timer
     Serial.println("\n========================================");
     Serial.println("       RF LEARNING MODE ACTIVATED");
     Serial.println("========================================");
@@ -2056,8 +2105,69 @@ void processSerialCommand() {
     Serial.println("  Fan 2: OFF, LOW, MED, HIGH, LIGHT (5)");
     Serial.println("  Fan 3: OFF, LOW, MED, HIGH, LIGHT (5)");
     Serial.println("\nPress Fan 1 OFF button now...");
+    Serial.println("(60 second timeout per button)");
+    Serial.println("Type 'CANCEL' to exit learning mode");
     Serial.println("========================================\n");
     rfSwitch.enableReceive(digitalPinToInterrupt(RF_RECEIVE_PIN));
+    return;
+  }
+
+  // CANCEL command - exit any learning mode
+  if (cmd == "CANCEL") {
+    if (learningMode || rfLearningMode) {
+      Serial.println("\n✓ Learning mode cancelled");
+      learningMode = false;
+      learningStep = 0;
+      rfLearningMode = false;
+      rfLearningStep = 0;
+      Blynk.virtualWrite(LEARN_MODE_VPIN, 0);
+      Blynk.virtualWrite(RF_LEARN_MODE_VPIN, 0);
+    } else {
+      Serial.println("No active learning mode to cancel");
+    }
+    return;
+  }
+
+  // TEST IR command - test IR transmitter
+  if (cmd == "TEST IR" || cmd == "TESTIR") {
+    Serial.println("\n=== IR TRANSMITTER TEST ===");
+    if (irCode_PowerOn != 0) {
+      Serial.println("Testing with learned Power ON code...");
+      Serial.print("Sending: 0x");
+      Serial.println(uint64ToString(irCode_PowerOn, HEX));
+      sendIRCommand(irCode_PowerOn);
+      Serial.println("✓ IR signal sent!");
+      Serial.println("\nDid your stove respond?");
+      Serial.println("  YES → IR transmitter working (GPIO5)");
+      Serial.println("  NO  → Check IR LED wiring or polarity");
+    } else {
+      Serial.println("❌ No IR codes learned yet");
+      Serial.println("Use 'LEARN IR' first to capture codes");
+    }
+    Serial.println("==========================\n");
+    return;
+  }
+
+  // TEST RF command - test RF transmitter
+  if (cmd == "TEST RF" || cmd == "TESTRF") {
+    Serial.println("\n=== RF TRANSMITTER TEST ===");
+    if (fan1_Off != 0) {
+      Serial.println("Testing with learned Fan 1 OFF code...");
+      Serial.print("Sending: ");
+      Serial.print(fan1_Off);
+      Serial.print(" (");
+      Serial.print(rfBitLength);
+      Serial.println(" bits)");
+      sendRFCommand(fan1_Off, rfBitLength);
+      Serial.println("✓ RF signal sent!");
+      Serial.println("\nDid Fan 1 turn off?");
+      Serial.println("  YES → RF transmitter working (GPIO16)");
+      Serial.println("  NO  → Check RF module wiring or antenna");
+    } else {
+      Serial.println("❌ No RF codes learned yet");
+      Serial.println("Use 'LEARN RF' first to capture codes");
+    }
+    Serial.println("==========================\n");
     return;
   }
 
