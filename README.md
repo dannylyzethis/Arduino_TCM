@@ -78,7 +78,7 @@ DHT11          ESP32
 ─────────────────────
 VCC     →      3.3V
 GND     →      GND
-DATA    →      GPIO4
+DATA    →      GPIO13
 ```
 
 ### VS1838B IR Receiver
@@ -92,17 +92,17 @@ OUT     →      GPIO14
 
 ### IR LED Transmitter Circuit
 ```
-ESP32 GPIO15 ──┬─── 10kΩ ───┬─── Transistor Base (2N2222)
-               │             │
-              GND           Emitter → GND
-                             │
-                          Collector
-                             │
-                             ├─── IR LED Anode (+)
-                             │
-                           100Ω
-                             │
-                          5V/VIN
+ESP32 GPIO5 ──┬─── 10kΩ ───┬─── Transistor Base (2N2222)
+              │             │
+             GND           Emitter → GND
+                            │
+                         Collector
+                            │
+                            ├─── IR LED Anode (+)
+                            │
+                          100Ω
+                            │
+                         5V/VIN
 
 IR LED Cathode (-) → Transistor Collector
 ```
@@ -147,12 +147,12 @@ ST7789 LCD     ESP32
 ─────────────────────
 VCC     →      3.3V
 GND     →      GND
-SCL     →      GPIO18 (SPI Clock)
+SCL     →      GPIO18 (SPI Clock / SCLK)
 SDA     →      GPIO23 (SPI MOSI)
-CS      →      GPIO5  (Chip Select)
+CS      →      GPIO15 (Chip Select)
 DC      →      GPIO2  (Data/Command)
-RST     →      GPIO0  (Reset)
-BL      →      3.3V   (Backlight)
+RST     →      GPIO4  (Reset)
+BLK     →      GPIO32 (Backlight control)
 ```
 
 **Display Features:**
@@ -204,7 +204,8 @@ Install via Arduino IDE (**Sketch → Include Library → Manage Libraries**):
 | **Adafruit Unified Sensor** | Adafruit | DHT library dependency |
 | **IRremoteESP8266** | David Conran, Sebastien Warin | IR transmit/receive (pellet stove) |
 | **rc-switch** | sui77 | 433MHz RF transmit/receive (ceiling fans) |
-| **TFT_eSPI** | Bodmer | ST7789 LCD display (optional) |
+| **Adafruit GFX Library** | Adafruit | Graphics core for LCD (optional) |
+| **Adafruit ST7789** | Adafruit | ST7789 LCD display driver (optional) |
 
 ## Blynk Setup
 

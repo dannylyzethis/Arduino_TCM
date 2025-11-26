@@ -11,25 +11,27 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <RCSwitch.h>
-#include <TFT_eSPI.h>       // ST7789 LCD library
+#include <Adafruit_GFX.h>    // Core graphics library
+#include <Adafruit_ST7789.h> // ST7789 LCD library
 #include <SPI.h>
 
 // ST7789 LCD Configuration (135x240 in landscape mode = 240x135)
-#define TFT_CS    5   // Chip select
-#define TFT_DC    2   // Data/Command
-#define TFT_RST   0   // Reset
-#define TFT_MOSI  23  // SPI MOSI
-#define TFT_SCLK  18  // SPI Clock
+#define LCD_MOSI  23  // SPI MOSI - ESP32 D23
+#define LCD_SCLK  18  // SPI Clock - ESP32 D18
+#define LCD_CS    15  // Chip select - ESP32 D15
+#define LCD_DC    2   // Data/Command - ESP32 D2
+#define LCD_RST   4   // Reset - ESP32 D4
+#define LCD_BLK   32  // Backlight - ESP32 D32
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 135
 
 // Define DHT11 pin and type
-#define DHTPIN 4        // GPIO4
+#define DHTPIN 13       // GPIO13 (moved from GPIO4 due to LCD conflict)
 #define DHTTYPE DHT11   // DHT11 sensor
 
 // Define IR pins
 #define IR_RECV_PIN 14  // GPIO14 for IR receiver (VS1838B)
-#define IR_SEND_PIN 15  // GPIO15 for IR LED transmitter
+#define IR_SEND_PIN 5   // GPIO5 for IR LED transmitter (moved from GPIO15 due to LCD conflict)
 
 // Define RF pins
 #define RF_TRANSMIT_PIN 16  // GPIO16 for 433MHz RF transmitter
@@ -96,7 +98,7 @@ IRsend irsend(IR_SEND_PIN);
 IRrecv irrecv(IR_RECV_PIN);
 decode_results results;
 RCSwitch rfSwitch = RCSwitch();
-TFT_eSPI tft = TFT_eSPI(TFT_HEIGHT, TFT_WIDTH);  // 135x240 display
+Adafruit_ST7789 lcd = Adafruit_ST7789(LCD_CS, LCD_DC, LCD_RST);  // 135x240 display
 BlynkTimer timer;
 Preferences preferences;
 
@@ -1327,18 +1329,23 @@ BLYNK_WRITE(RESET_LEARNING_VPIN) {
 // ==================== LCD DISPLAY FUNCTIONS ====================
 
 void initDisplay() {
-  tft.init();
-  tft.setRotation(3);  // Landscape mode (240x135)
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  // Initialize backlight
+  pinMode(LCD_BLK, OUTPUT);
+  digitalWrite(LCD_BLK, HIGH);  // Turn on backlight
+
+  // Initialize display
+  lcd.init(135, 240);           // Init with width & height
+  lcd.setRotation(3);           // Landscape mode (240x135)
+  lcd.fillScreen(ST77XX_BLACK);
+  lcd.setTextColor(ST77XX_WHITE);
 
   // Draw initial screen
-  tft.setTextSize(1);
-  tft.setCursor(0, 0);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.println("  PELLET STOVE CONTROL");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.println("  Initializing...");
+  lcd.setTextSize(1);
+  lcd.setCursor(0, 0);
+  lcd.setTextColor(ST77XX_CYAN);
+  lcd.println("  PELLET STOVE CONTROL");
+  lcd.setTextColor(ST77XX_WHITE);
+  lcd.println("  Initializing...");
 
   displayInitialized = true;
   Serial.println("✓ ST7789 LCD initialized (240x135 landscape)");
@@ -1370,185 +1377,185 @@ void updateDisplay() {
   }
 
   // Clear screen
-  tft.fillScreen(TFT_BLACK);
+  lcd.fillScreen(ST77XX_BLACK);
 
   // ===== LINE 1: Header with status indicators (0-18px) =====
-  tft.setTextSize(1);
-  tft.setCursor(0, 2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.print("STOVE CTRL");
+  lcd.setTextSize(1);
+  lcd.setCursor(0, 2);
+  lcd.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  lcd.print("STOVE CTRL");
 
   // WiFi status
-  tft.setCursor(155, 2);
+  lcd.setCursor(155, 2);
   if (WiFi.status() == WL_CONNECTED) {
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.print("W");
+    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    lcd.print("W");
   } else {
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.print("W");
+    lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
+    lcd.print("W");
   }
 
   // Blynk status
-  tft.setCursor(170, 2);
+  lcd.setCursor(170, 2);
   if (Blynk.connected()) {
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.print("B");
+    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    lcd.print("B");
   } else {
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.print("B");
+    lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
+    lcd.print("B");
   }
 
   // Auto mode indicator
-  tft.setCursor(185, 2);
+  lcd.setCursor(185, 2);
   if (autoMode) {
-    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-    tft.print("AUTO");
+    lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    lcd.print("AUTO");
   } else {
-    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    tft.print("MAN");
+    lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+    lcd.print("MAN");
   }
 
   // ===== LINE 2: Zone 1 temp, humidity, target (20-38px) =====
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(0, 20);
-  tft.print("Z1:");
-  tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-  tft.print(localTemp, 1);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.print("F");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(0, 20);
+  lcd.print("Z1:");
+  lcd.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+  lcd.print(localTemp, 1);
+  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+  lcd.print("F");
 
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(75, 20);
-  tft.print("H:");
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.print((int)humidity);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.print("%");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(75, 20);
+  lcd.print("H:");
+  lcd.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  lcd.print((int)humidity);
+  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+  lcd.print("%");
 
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(135, 20);
-  tft.print("Tgt:");
-  tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.print(tempSetpoint, 0);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.print("F");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(135, 20);
+  lcd.print("Tgt:");
+  lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  lcd.print(tempSetpoint, 0);
+  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+  lcd.print("F");
 
   // ===== LINE 3: Zone 2 temp and heat level (40-58px) =====
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(0, 40);
-  tft.print("Z2:");
-  tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-  tft.print(remoteTemp, 1);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.print("F");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(0, 40);
+  lcd.print("Z2:");
+  lcd.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+  lcd.print(remoteTemp, 1);
+  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+  lcd.print("F");
 
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(75, 40);
-  tft.print("Heat:");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(75, 40);
+  lcd.print("Heat:");
 
   // Draw heat level blocks
-  tft.setCursor(115, 40);
+  lcd.setCursor(115, 40);
   for (int i = 1; i <= 5; i++) {
     if (stoveIsOn && i <= currentHeatLevel) {
-      tft.setTextColor(TFT_RED, TFT_BLACK);
-      tft.print((char)219); // Full block character
+      lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
+      lcd.print((char)219); // Full block character
     } else {
-      tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-      tft.print((char)176); // Light block character
+      lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+      lcd.print((char)176); // Light block character
     }
   }
 
   // Stove status
-  tft.setCursor(165, 40);
+  lcd.setCursor(165, 40);
   if (stoveIsOn) {
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.print("ON");
+    lcd.setTextColor(ST77XX_RED, ST77XX_BLACK);
+    lcd.print("ON");
   } else {
-    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    tft.print("OFF");
+    lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+    lcd.print("OFF");
   }
 
   // ===== LINE 4: Separator (60px) =====
-  tft.setCursor(0, 60);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.println("------------------------");
+  lcd.setCursor(0, 60);
+  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+  lcd.println("------------------------");
 
   // ===== LINE 5: Fan statuses (70-88px) =====
-  tft.setCursor(0, 70);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.setCursor(0, 70);
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
 
   // Fan 1
-  tft.print("F1:");
+  lcd.print("F1:");
   switch (fan1State.speed) {
-    case 0: tft.setTextColor(TFT_DARKGREY, TFT_BLACK); tft.print("OFF"); break;
-    case 1: tft.setTextColor(TFT_GREEN, TFT_BLACK); tft.print("LOW"); break;
-    case 2: tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.print("MED"); break;
-    case 3: tft.setTextColor(TFT_RED, TFT_BLACK); tft.print("HI "); break;
+    case 0: lcd.setTextColor(0x7BEF, ST77XX_BLACK); lcd.print("OFF"); break;
+    case 1: lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK); lcd.print("LOW"); break;
+    case 2: lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK); lcd.print("MED"); break;
+    case 3: lcd.setTextColor(ST77XX_RED, ST77XX_BLACK); lcd.print("HI "); break;
   }
 
   // Fan 2
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(65, 70);
-  tft.print("F2:");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(65, 70);
+  lcd.print("F2:");
   switch (fan2State.speed) {
-    case 0: tft.setTextColor(TFT_DARKGREY, TFT_BLACK); tft.print("OFF"); break;
-    case 1: tft.setTextColor(TFT_GREEN, TFT_BLACK); tft.print("LOW"); break;
-    case 2: tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.print("MED"); break;
-    case 3: tft.setTextColor(TFT_RED, TFT_BLACK); tft.print("HI "); break;
+    case 0: lcd.setTextColor(0x7BEF, ST77XX_BLACK); lcd.print("OFF"); break;
+    case 1: lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK); lcd.print("LOW"); break;
+    case 2: lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK); lcd.print("MED"); break;
+    case 3: lcd.setTextColor(ST77XX_RED, ST77XX_BLACK); lcd.print("HI "); break;
   }
 
   // Fan 3
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(130, 70);
-  tft.print("F3:");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(130, 70);
+  lcd.print("F3:");
   switch (fan3State.speed) {
-    case 0: tft.setTextColor(TFT_DARKGREY, TFT_BLACK); tft.print("OFF"); break;
-    case 1: tft.setTextColor(TFT_GREEN, TFT_BLACK); tft.print("LOW"); break;
-    case 2: tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.print("MED"); break;
-    case 3: tft.setTextColor(TFT_RED, TFT_BLACK); tft.print("HI "); break;
+    case 0: lcd.setTextColor(0x7BEF, ST77XX_BLACK); lcd.print("OFF"); break;
+    case 1: lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK); lcd.print("LOW"); break;
+    case 2: lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK); lcd.print("MED"); break;
+    case 3: lcd.setTextColor(ST77XX_RED, ST77XX_BLACK); lcd.print("HI "); break;
   }
 
   // ===== LINE 6: Learning status and auto-equalization (90-108px) =====
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(0, 90);
-  tft.print("Learn:");
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.print(totalSamples);
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(0, 90);
+  lcd.print("Learn:");
+  lcd.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  lcd.print(totalSamples);
 
   // Auto-equalization status
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(80, 90);
-  tft.print("AutoEQ:");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(80, 90);
+  lcd.print("AutoEQ:");
   if (autoEqualizationMode) {
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.print("ON");
+    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    lcd.print("ON");
   } else {
-    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    tft.print("OFF");
+    lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+    lcd.print("OFF");
   }
 
   // ===== LINE 7: Temperature difference and zone indicator (110-128px) =====
   float tempDiff = abs(localTemp - remoteTemp);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(0, 110);
-  tft.print("Diff:");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(0, 110);
+  lcd.print("Diff:");
   if (tempDiff > tempDifferenceThreshold) {
-    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+    lcd.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
   } else {
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    lcd.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
   }
-  tft.print(tempDiff, 1);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.print("F");
+  lcd.print(tempDiff, 1);
+  lcd.setTextColor(0x7BEF, ST77XX_BLACK);
+  lcd.print("F");
 
   // Active zone indicator
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(80, 110);
-  tft.print("Zone:");
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  if (activeZone == 0) tft.print("1");
-  else if (activeZone == 1) tft.print("2");
-  else tft.print("AVG");
+  lcd.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  lcd.setCursor(80, 110);
+  lcd.print("Zone:");
+  lcd.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  if (activeZone == 0) lcd.print("1");
+  else if (activeZone == 1) lcd.print("2");
+  else lcd.print("AVG");
 }
 
 void setup() {
@@ -1570,7 +1577,7 @@ void setup() {
   // Initialize IR components
   irsend.begin();
   irrecv.enableIRIn();
-  Serial.println("✓ IR transmitter initialized on GPIO15");
+  Serial.println("✓ IR transmitter initialized on GPIO5");
   Serial.println("✓ IR receiver initialized on GPIO14");
 
   // Initialize RF components
