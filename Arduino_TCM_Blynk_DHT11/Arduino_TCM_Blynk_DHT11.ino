@@ -11,6 +11,17 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <RCSwitch.h>
+#include <TFT_eSPI.h>       // ST7789 LCD library
+#include <SPI.h>
+
+// ST7789 LCD Configuration (135x240 in landscape mode = 240x135)
+#define TFT_CS    5   // Chip select
+#define TFT_DC    2   // Data/Command
+#define TFT_RST   0   // Reset
+#define TFT_MOSI  23  // SPI MOSI
+#define TFT_SCLK  18  // SPI Clock
+#define TFT_WIDTH  240
+#define TFT_HEIGHT 135
 
 // Define DHT11 pin and type
 #define DHTPIN 4        // GPIO4
@@ -85,6 +96,7 @@ IRsend irsend(IR_SEND_PIN);
 IRrecv irrecv(IR_RECV_PIN);
 decode_results results;
 RCSwitch rfSwitch = RCSwitch();
+TFT_eSPI tft = TFT_eSPI(TFT_HEIGHT, TFT_WIDTH);  // 135x240 display
 BlynkTimer timer;
 Preferences preferences;
 
@@ -191,6 +203,11 @@ float lastZone1Temp = 0.0;
 float lastZone2Temp = 0.0;
 unsigned long lastTempSampleTime = 0;
 const unsigned long TEMP_SAMPLE_INTERVAL = 60000; // Sample every 1 minute for learning
+
+// LCD Display variables
+unsigned long lastDisplayUpdate = 0;
+const unsigned long DISPLAY_UPDATE_INTERVAL = 2000; // Update display every 2 seconds
+bool displayInitialized = false;
 
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
@@ -1307,6 +1324,233 @@ BLYNK_WRITE(RESET_LEARNING_VPIN) {
   }
 }
 
+// ==================== LCD DISPLAY FUNCTIONS ====================
+
+void initDisplay() {
+  tft.init();
+  tft.setRotation(3);  // Landscape mode (240x135)
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  // Draw initial screen
+  tft.setTextSize(1);
+  tft.setCursor(0, 0);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.println("  PELLET STOVE CONTROL");
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.println("  Initializing...");
+
+  displayInitialized = true;
+  Serial.println("✓ ST7789 LCD initialized (240x135 landscape)");
+}
+
+void updateDisplay() {
+  if (!displayInitialized) return;
+
+  // Get current temperature for display
+  float displayTemp = currentTemp;
+  if (activeZone == 0) {
+    displayTemp = localTemp;
+  } else if (activeZone == 1) {
+    displayTemp = remoteTemp;
+  } else {
+    displayTemp = (localTemp + remoteTemp) / 2.0;
+  }
+
+  // Calculate humidity
+  float humidity = dht.readHumidity();
+  if (isnan(humidity)) humidity = 0.0;
+
+  // Get total learning samples across all fans/speeds
+  int totalSamples = 0;
+  for (int f = 0; f < 3; f++) {
+    for (int s = 0; s < 4; s++) {
+      totalSamples += learningModel[f][s].sampleCount;
+    }
+  }
+
+  // Clear screen
+  tft.fillScreen(TFT_BLACK);
+
+  // ===== LINE 1: Header with status indicators (0-18px) =====
+  tft.setTextSize(1);
+  tft.setCursor(0, 2);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.print("STOVE CTRL");
+
+  // WiFi status
+  tft.setCursor(155, 2);
+  if (WiFi.status() == WL_CONNECTED) {
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.print("W");
+  } else {
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.print("W");
+  }
+
+  // Blynk status
+  tft.setCursor(170, 2);
+  if (Blynk.connected()) {
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.print("B");
+  } else {
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.print("B");
+  }
+
+  // Auto mode indicator
+  tft.setCursor(185, 2);
+  if (autoMode) {
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.print("AUTO");
+  } else {
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.print("MAN");
+  }
+
+  // ===== LINE 2: Zone 1 temp, humidity, target (20-38px) =====
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(0, 20);
+  tft.print("Z1:");
+  tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+  tft.print(localTemp, 1);
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.print("F");
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(75, 20);
+  tft.print("H:");
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.print((int)humidity);
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.print("%");
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(135, 20);
+  tft.print("Tgt:");
+  tft.setTextColor(TFT_GREEN, TFT_BLACK);
+  tft.print(tempSetpoint, 0);
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.print("F");
+
+  // ===== LINE 3: Zone 2 temp and heat level (40-58px) =====
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(0, 40);
+  tft.print("Z2:");
+  tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+  tft.print(remoteTemp, 1);
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.print("F");
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(75, 40);
+  tft.print("Heat:");
+
+  // Draw heat level blocks
+  tft.setCursor(115, 40);
+  for (int i = 1; i <= 5; i++) {
+    if (stoveIsOn && i <= currentHeatLevel) {
+      tft.setTextColor(TFT_RED, TFT_BLACK);
+      tft.print((char)219); // Full block character
+    } else {
+      tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+      tft.print((char)176); // Light block character
+    }
+  }
+
+  // Stove status
+  tft.setCursor(165, 40);
+  if (stoveIsOn) {
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.print("ON");
+  } else {
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.print("OFF");
+  }
+
+  // ===== LINE 4: Separator (60px) =====
+  tft.setCursor(0, 60);
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.println("------------------------");
+
+  // ===== LINE 5: Fan statuses (70-88px) =====
+  tft.setCursor(0, 70);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  // Fan 1
+  tft.print("F1:");
+  switch (fan1State.speed) {
+    case 0: tft.setTextColor(TFT_DARKGREY, TFT_BLACK); tft.print("OFF"); break;
+    case 1: tft.setTextColor(TFT_GREEN, TFT_BLACK); tft.print("LOW"); break;
+    case 2: tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.print("MED"); break;
+    case 3: tft.setTextColor(TFT_RED, TFT_BLACK); tft.print("HI "); break;
+  }
+
+  // Fan 2
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(65, 70);
+  tft.print("F2:");
+  switch (fan2State.speed) {
+    case 0: tft.setTextColor(TFT_DARKGREY, TFT_BLACK); tft.print("OFF"); break;
+    case 1: tft.setTextColor(TFT_GREEN, TFT_BLACK); tft.print("LOW"); break;
+    case 2: tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.print("MED"); break;
+    case 3: tft.setTextColor(TFT_RED, TFT_BLACK); tft.print("HI "); break;
+  }
+
+  // Fan 3
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(130, 70);
+  tft.print("F3:");
+  switch (fan3State.speed) {
+    case 0: tft.setTextColor(TFT_DARKGREY, TFT_BLACK); tft.print("OFF"); break;
+    case 1: tft.setTextColor(TFT_GREEN, TFT_BLACK); tft.print("LOW"); break;
+    case 2: tft.setTextColor(TFT_YELLOW, TFT_BLACK); tft.print("MED"); break;
+    case 3: tft.setTextColor(TFT_RED, TFT_BLACK); tft.print("HI "); break;
+  }
+
+  // ===== LINE 6: Learning status and auto-equalization (90-108px) =====
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(0, 90);
+  tft.print("Learn:");
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.print(totalSamples);
+
+  // Auto-equalization status
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(80, 90);
+  tft.print("AutoEQ:");
+  if (autoEqualizationMode) {
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.print("ON");
+  } else {
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.print("OFF");
+  }
+
+  // ===== LINE 7: Temperature difference and zone indicator (110-128px) =====
+  float tempDiff = abs(localTemp - remoteTemp);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(0, 110);
+  tft.print("Diff:");
+  if (tempDiff > tempDifferenceThreshold) {
+    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+  } else {
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+  }
+  tft.print(tempDiff, 1);
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.print("F");
+
+  // Active zone indicator
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(80, 110);
+  tft.print("Zone:");
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  if (activeZone == 0) tft.print("1");
+  else if (activeZone == 1) tft.print("2");
+  else tft.print("AVG");
+}
+
 void setup() {
   // Start serial communication
   Serial.begin(115200);
@@ -1319,6 +1563,9 @@ void setup() {
   // Initialize DHT sensor
   dht.begin();
   Serial.println("✓ DHT11 sensor initialized");
+
+  // Initialize LCD Display
+  initDisplay();
 
   // Initialize IR components
   irsend.begin();
@@ -1372,6 +1619,9 @@ void setup() {
 
   // Set timer for auto-equalization (every 5 minutes)
   timer.setInterval(300000L, autoEqualizeTemperatures);
+
+  // Set timer for LCD display updates (every 2 seconds)
+  timer.setInterval(2000L, updateDisplay);
 
   // Send initial status to Blynk
   Blynk.virtualWrite(STOVE_STATUS_VPIN, stoveIsOn ? 1 : 0);
@@ -1433,6 +1683,9 @@ void setup() {
   Serial.println("- Improves over time as it collects more samples");
   Serial.println("- Saves learned patterns to flash memory");
   Serial.println();
+
+  // Initial display update
+  updateDisplay();
 }
 
 void loop() {

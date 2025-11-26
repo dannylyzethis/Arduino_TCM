@@ -4,6 +4,8 @@ Comprehensive home climate control system using ESP32 with:
 - **Pellet Stove Control** (IR) - Automated temperature-based heat management
 - **3 Ceiling Fans Control** (433MHz RF) - Independent fan speed and light control
 - **Multi-Zone Temperature Monitoring** - DHT11 sensors with ESP-NOW wireless network
+- **Temperature Equalization Learning** - AI learns to balance temps using fans
+- **LCD Status Display** (Optional) - Real-time dashboard with all system status
 - **Blynk IoT Integration** - Remote control from anywhere
 
 ## Features
@@ -23,10 +25,18 @@ Comprehensive home climate control system using ESP32 with:
 ✅ **Light Control** - Toggle lights on each fan
 ✅ **Persistent Storage** - RF codes saved to flash memory
 
+### Temperature Equalization Learning
+✅ **Automatic Learning** - System learns which fan affects which zone's temperature
+✅ **Smart Fan Control** - Uses learned patterns to balance zone temperatures
+✅ **Running Averages** - Collects up to 50 samples per fan/speed for accuracy
+✅ **Auto-Equalization Mode** - Automatically balances temps when zones differ
+✅ **Persistent Learning** - Learned patterns saved to flash memory
+
 ### General Features
 ✅ **Temperature & Humidity Monitoring** - Real-time DHT11 sensor readings
 ✅ **Multi-Zone Control** - Control stove based on temperature from different rooms
 ✅ **ESP-NOW Communication** - Fast, reliable wireless sensor network (no internet needed)
+✅ **LCD Status Display** - Optional 135x240 color display shows all system status
 ✅ **Real-time Status** - Monitor all devices from anywhere via Blynk
 ✅ **Sensor Protection** - Auto-disables if temperature sensor fails
 ✅ **Unified Control** - Single Blynk app controls stove, fans, and monitors temperature
@@ -50,6 +60,10 @@ Comprehensive home climate control system using ESP32 with:
 - **433MHz RF Transmitter Module** (FS1000A, SYN115, or RXB6)
 - **433MHz RF Receiver Module** (Optional, for learning mode - RXB6 or WL101-341)
 - **17cm wire antenna** (Optional, for better range)
+
+### For LCD Display (Optional)
+- **ST7789 LCD Display** (135x240 pixels) - Real-time status dashboard
+- Display shows temperatures, fan status, heat level, learning progress
 
 ### Optional
 - **Additional ESP32** with DHT11 for remote zone temperature monitoring
@@ -127,6 +141,46 @@ ANT     →      17cm wire antenna (optional, for better range)
 - Point RF transmitter toward ceiling fans (RF works through walls, no line-of-sight needed)
 - Typical range: 30-50 feet without antenna, 100+ feet with antenna
 
+### ST7789 LCD Display (Optional, 135x240 pixels)
+```
+ST7789 LCD     ESP32
+─────────────────────
+VCC     →      3.3V
+GND     →      GND
+SCL     →      GPIO18 (SPI Clock)
+SDA     →      GPIO23 (SPI MOSI)
+CS      →      GPIO5  (Chip Select)
+DC      →      GPIO2  (Data/Command)
+RST     →      GPIO0  (Reset)
+BL      →      3.3V   (Backlight)
+```
+
+**Display Features:**
+- **Real-time Dashboard** - Updates every 2 seconds
+- **Zone Temperatures** - Shows both Zone 1 and Zone 2 temperatures
+- **Humidity Display** - Real-time humidity percentage
+- **Heat Level Indicator** - Visual bar graph (1-5 blocks)
+- **Fan Status** - Shows all 3 fans (OFF/LOW/MED/HI)
+- **Learning Progress** - Total learning samples collected
+- **Auto-Equalization Status** - Shows if auto-EQ is active
+- **Temperature Difference** - Shows zone temp difference
+- **WiFi/Blynk Status** - Connection indicators
+- **Auto Mode Indicator** - Shows AUTO or MAN mode
+- **Stove Status** - Shows ON/OFF state
+
+**Display Layout (240x135 Landscape):**
+```
+┌────────────────────────────────────┐
+│ STOVE CTRL          W B AUTO       │
+│ Z1:72.5F  H:45%  Tgt:70F           │
+│ Z2:70.2F  Heat:▓▓▓░░ ON            │
+│ ────────────────────────            │
+│ F1:HI  F2:OFF  F3:MED               │
+│ Learn:23  AutoEQ:ON                 │
+│ Diff:2.3F  Zone:1                   │
+└────────────────────────────────────┘
+```
+
 ## Software Requirements
 
 ### Arduino IDE Setup
@@ -150,6 +204,7 @@ Install via Arduino IDE (**Sketch → Include Library → Manage Libraries**):
 | **Adafruit Unified Sensor** | Adafruit | DHT library dependency |
 | **IRremoteESP8266** | David Conran, Sebastien Warin | IR transmit/receive (pellet stove) |
 | **rc-switch** | sui77 | 433MHz RF transmit/receive (ceiling fans) |
+| **TFT_eSPI** | Bodmer | ST7789 LCD display (optional) |
 
 ## Blynk Setup
 
