@@ -221,6 +221,11 @@ bool displayInitialized = false;
 int currentDisplayPage = 0;  // 0-4 for 5 different pages
 const int TOTAL_DISPLAY_PAGES = 5;
 
+// Blynk rate limiting - reduce message usage
+unsigned long lastBlynkUpdate[TOTAL_ZONES] = {0, 0, 0, 0};  // Last Blynk update time per zone
+const unsigned long BLYNK_UPDATE_INTERVAL = 300000;  // Update Blynk every 5 minutes (300,000 ms)
+// This reduces Blynk messages from ~10,000/day to ~600/day
+
 // Function to send IR command
 void sendIRCommand(uint64_t code) {
   if (code == 0) {
@@ -648,8 +653,14 @@ void onDataReceive(const uint8_t *mac, const uint8_t *incomingDataPtr, int len) 
   Serial.print(zoneHumidity[zoneID]);
   Serial.println("%");
 
-  // Update Blynk with zone temperatures
-  Blynk.virtualWrite(REMOTE_TEMP_VPIN, zoneTemp[zoneID]);  // For backward compatibility
+  // Update Blynk with zone temperatures (RATE LIMITED to every 5 minutes)
+  unsigned long currentTime = millis();
+  if (currentTime - lastBlynkUpdate[zoneID] >= BLYNK_UPDATE_INTERVAL) {
+    Blynk.virtualWrite(REMOTE_TEMP_VPIN, zoneTemp[zoneID]);  // For backward compatibility
+    lastBlynkUpdate[zoneID] = currentTime;
+    Serial.print("  → Blynk updated for Zone ");
+    Serial.println(zoneID);
+  }
 
   // Update current temp for thermostat control
   currentTemp = zoneTemp[thermostatZone];
@@ -1013,9 +1024,11 @@ void sendData() {
   // Update current temperature for thermostat control (Zone 0)
   currentTemp = zoneTemp[thermostatZone];
 
-  // Send data to Blynk app
+  // Send data to Blynk app (called every 5 minutes via timer to reduce message usage)
   Blynk.virtualWrite(TEMP_VPIN, f);
   Blynk.virtualWrite(HUM_VPIN, h);
+  lastBlynkUpdate[0] = millis();  // Track update time
+  Serial.println("  → Blynk updated for Zone 0");
 
   // Print all zone temperatures
   Serial.println("\n--- ALL ZONES STATUS ---");
@@ -1693,8 +1706,8 @@ void setup() {
   esp_now_register_recv_cb(onDataReceive);
   Serial.println("✓ ESP-NOW initialized (ready to receive from remote sensors)");
 
-  // Set timer to send data every 2 minutes (120,000 ms)
-  timer.setInterval(120000L, sendData);
+  // Set timer to send data every 5 minutes (300,000 ms) - reduces Blynk message usage
+  timer.setInterval(300000L, sendData);
 
   // Set timer to check for IR signals every 100ms when in learning mode
   timer.setInterval(100L, checkForIRSignal);
