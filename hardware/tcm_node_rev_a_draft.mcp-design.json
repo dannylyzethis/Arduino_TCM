@@ -1,0 +1,434 @@
+{
+  "version": 1,
+  "model": {
+    "name": "tcm_node_rev_a_draft",
+    "title": "TCM common node - electrical draft, NOT FOR FABRICATION",
+    "revision": "A2",
+    "components": [
+      {
+        "reference": "J1",
+        "value": "IDEASPARK LEFT SOCKET",
+        "symbol": "Connector_Generic:Conn_01x15",
+        "x": 38.1,
+        "y": 60.96
+      },
+      {
+        "reference": "J2",
+        "value": "3V3 I2C SENSOR",
+        "symbol": "Connector_Generic:Conn_01x04",
+        "x": 132.08,
+        "y": 44.45
+      },
+      {
+        "reference": "J3",
+        "value": "3V3 DATA SENSOR (OPTION)",
+        "symbol": "Connector_Generic:Conn_01x03",
+        "x": 132.08,
+        "y": 74.93
+      },
+      {
+        "reference": "J4",
+        "value": "EXTERNAL IR LED A/K",
+        "symbol": "Connector_Generic:Conn_01x02",
+        "x": 180.34,
+        "y": 44.45
+      },
+      {
+        "reference": "J5",
+        "value": "3V3 IR RECEIVER",
+        "symbol": "Connector_Generic:Conn_01x03",
+        "x": 180.34,
+        "y": 74.93
+      },
+      {
+        "reference": "J6",
+        "value": "RF ADAPTER",
+        "symbol": "Connector_Generic:Conn_01x08",
+        "x": 260.35,
+        "y": 49.53
+      },
+      {
+        "reference": "R1",
+        "value": "100",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 180.34,
+        "y": 100.33,
+        "rotation": 90
+      },
+      {
+        "reference": "R2",
+        "value": "100k",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 180.34,
+        "y": 143.51,
+        "rotation": 90
+      },
+      {
+        "reference": "R3",
+        "value": "100R 0.5W 1%",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_2010_5025Metric",
+        "x": 180.34,
+        "y": 160.02,
+        "rotation": 90
+      },
+      {
+        "reference": "Q1",
+        "value": "AO3400A",
+        "symbol": "Transistor_FET:AO3400A",
+        "footprint": "Package_TO_SOT_SMD:SOT-23-3",
+        "datasheet": "https://aosmd.com/res/data_sheets/AO3400A.pdf",
+        "x": 180.34,
+        "y": 124.46,
+        "rotation": 90
+      },
+      {
+        "reference": "R4",
+        "value": "4.7k (optional)",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 44.45,
+        "y": 110.49,
+        "rotation": 90
+      },
+      {
+        "reference": "R5",
+        "value": "4.7k (optional)",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 110.49,
+        "y": 110.49,
+        "rotation": 90
+      },
+      {
+        "reference": "R6",
+        "value": "4.7k optional",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 44.45,
+        "y": 134.62,
+        "rotation": 90
+      },
+      {
+        "reference": "C1",
+        "value": "100n",
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "x": 110.49,
+        "y": 134.62,
+        "rotation": 90
+      },
+      {
+        "reference": "C2",
+        "value": "10u",
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_1210_3225Metric",
+        "x": 44.45,
+        "y": 160.02,
+        "rotation": 90
+      },
+      {
+        "reference": "C3",
+        "value": "100n",
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "x": 255.27,
+        "y": 119.38,
+        "rotation": 90
+      },
+      {
+        "reference": "J7",
+        "value": "RF 5V OPTION",
+        "symbol": "Connector_Generic:Conn_01x02",
+        "x": 260.35,
+        "y": 80.01
+      },
+      {
+        "reference": "R7",
+        "value": "0R (DNP)",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 110.49,
+        "y": 160.02,
+        "rotation": 90
+      },
+      {
+        "reference": "C4",
+        "value": "10u",
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_1210_3225Metric",
+        "x": 255.27,
+        "y": 139.7,
+        "rotation": 90
+      },
+      {
+        "reference": "C5",
+        "value": "100n",
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "x": 255.27,
+        "y": 160.02,
+        "rotation": 90
+      },
+      {
+        "reference": "R8",
+        "value": "100k",
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "x": 255.27,
+        "y": 100.33,
+        "rotation": 90
+      },
+      {
+        "reference": "J8",
+        "value": "IDEASPARK RIGHT SOCKET",
+        "symbol": "Connector_Generic:Conn_01x15",
+        "x": 85.09,
+        "y": 60.96
+      }
+    ],
+    "nets": [
+      {
+        "name": "VBUS_TBD",
+        "pins": [
+          "J1.1",
+          "R3.1",
+          "C4.1",
+          "C5.1",
+          "R7.1"
+        ]
+      },
+      {
+        "name": "V3V3_TBD",
+        "pins": [
+          "J8.1",
+          "J2.1",
+          "J3.1",
+          "J5.1",
+          "J6.1",
+          "R4.1",
+          "R5.1",
+          "R6.1",
+          "C1.1",
+          "C2.1",
+          "C3.1"
+        ]
+      },
+      {
+        "name": "GND",
+        "pins": [
+          "J1.2",
+          "J2.2",
+          "J3.2",
+          "J5.2",
+          "J6.2",
+          "J7.2",
+          "Q1.2",
+          "R2.2",
+          "C1.2",
+          "C2.2",
+          "C3.2",
+          "C4.2",
+          "C5.2",
+          "R8.2",
+          "J8.2"
+        ]
+      },
+      {
+        "name": "SDA21",
+        "pins": [
+          "J8.11",
+          "J2.3",
+          "R4.2"
+        ]
+      },
+      {
+        "name": "SCL22",
+        "pins": [
+          "J8.14",
+          "J2.4",
+          "R5.2"
+        ]
+      },
+      {
+        "name": "SENS13",
+        "pins": [
+          "J1.3",
+          "J3.3",
+          "R6.2"
+        ]
+      },
+      {
+        "name": "IR_RX14",
+        "pins": [
+          "J1.5",
+          "J5.3"
+        ]
+      },
+      {
+        "name": "IR_TX25",
+        "pins": [
+          "J1.8",
+          "R1.1"
+        ]
+      },
+      {
+        "name": "IR_GATE",
+        "pins": [
+          "R1.2",
+          "R2.1",
+          "Q1.1"
+        ]
+      },
+      {
+        "name": "LED_A",
+        "pins": [
+          "R3.2",
+          "J4.1"
+        ]
+      },
+      {
+        "name": "LED_K",
+        "pins": [
+          "J4.2",
+          "Q1.3"
+        ]
+      },
+      {
+        "name": "RF16_TX_CS",
+        "pins": [
+          "J8.6",
+          "J6.3",
+          "R8.1"
+        ]
+      },
+      {
+        "name": "RF17_RX_IRQ",
+        "pins": [
+          "J8.7",
+          "J6.4"
+        ]
+      },
+      {
+        "name": "RF26_CLK",
+        "pins": [
+          "J1.7",
+          "J6.5"
+        ]
+      },
+      {
+        "name": "RF27_MOSI",
+        "pins": [
+          "J1.6",
+          "J6.6"
+        ]
+      },
+      {
+        "name": "RF33_MISO",
+        "pins": [
+          "J1.9",
+          "J6.7"
+        ]
+      },
+      {
+        "name": "RF19_AUX",
+        "pins": [
+          "J8.10",
+          "J6.8"
+        ]
+      },
+      {
+        "name": "RF_5V_OPT",
+        "pins": [
+          "R7.2",
+          "J7.1"
+        ]
+      }
+    ],
+    "noConnect": [
+      "J1.4",
+      "J1.10",
+      "J1.11",
+      "J1.12",
+      "J1.13",
+      "J1.14",
+      "J1.15",
+      "J8.3",
+      "J8.4",
+      "J8.5",
+      "J8.8",
+      "J8.9",
+      "J8.12",
+      "J8.13",
+      "J8.15"
+    ],
+    "notes": [
+      {
+        "x": 20,
+        "y": 17,
+        "text": "TCM NODE A2 - ELECTRICAL DRAFT / NOT FOR FABRICATION",
+        "size": 1.5
+      },
+      {
+        "x": 20,
+        "y": 177,
+        "text": "J1/J8: ideaspark left/right, display facing viewer; USB at bottom; pin 1 at USB end.",
+        "size": 1
+      },
+      {
+        "x": 20,
+        "y": 181,
+        "text": "J6: RF adapter contract; 3.3V logic only. RF module and translator TBD.",
+        "size": 1
+      },
+      {
+        "x": 20,
+        "y": 185,
+        "text": "Stove: Q1,R1-R3,J4,J5,C3-C5. Fan: J6; R7/J7 optional 5V. R8: simple TX only.",
+        "size": 1
+      },
+      {
+        "x": 20,
+        "y": 189,
+        "text": "Display GPIO23/18/15/2/4/32 reserved. Socket row spacing and power capacity TBD.",
+        "size": 1
+      },
+      {
+        "x": 20,
+        "y": 193,
+        "text": "IR LED: TSAL6200 candidate; receiver/carrier TBD. R4-R6: optional sensor pull-ups.",
+        "size": 1
+      }
+    ]
+  },
+  "rootUuid": "e4d75fa4-a1eb-471f-a3f7-217afe1f9337",
+  "components": {
+    "J1#1": "719fc82b-8f3e-47a7-9574-e0c22438750d",
+    "J2#1": "ace78af7-6dfe-4024-93f4-1961e7955350",
+    "J3#1": "bf051f1f-d8f5-4df9-8fdd-5306b6489fcb",
+    "J4#1": "c57a8236-3916-4485-a7b7-14d9ad897a41",
+    "J5#1": "a052fd64-a45a-49e0-a385-005169362549",
+    "J6#1": "f04faecf-3680-4b9c-aa24-6cb6cb30f144",
+    "R1#1": "6a7c4b07-89a8-494a-9114-36d5ea320a35",
+    "R2#1": "3d316095-c611-4cd8-91fe-a319b9793df1",
+    "R3#1": "27e3ed5a-a410-4e8d-8a86-1b36f3bfdb09",
+    "Q1#1": "918219f4-0415-431b-851a-5e93bbb0b8cd",
+    "R4#1": "95029722-b733-47ea-ab85-0073f1984810",
+    "R5#1": "7597484c-49d9-4f59-92c7-b08e7e72156e",
+    "R6#1": "6f8eeecf-c48b-4cf3-807c-021743710f65",
+    "C1#1": "b94e5dd2-417d-4ce8-99ab-481939161256",
+    "C2#1": "d833aa58-6f5e-4280-8e9d-a46436ea05f6",
+    "C3#1": "7c1ef367-4a29-42eb-b0a3-bbe1cf747a90",
+    "J7#1": "3a6d6399-a4e6-4b91-9915-60e3ffb36af5",
+    "R7#1": "24107985-1cad-46fc-a125-b3c5cb600cf5",
+    "C4#1": "b39eb3be-940f-493b-b317-167359b03acf",
+    "C5#1": "c73ca545-796a-4c8f-b70c-c392443a8054",
+    "R8#1": "55edae94-cdc8-4bd0-bff8-aeff7e8bb83d",
+    "J8#1": "a8f11cd5-b5a7-467d-9b74-988be7d139bd"
+  },
+  "hashes": {
+    "tcm_node_rev_a_draft.kicad_sch": "cce81ad87aaf48c818fcef719e0a1fa6115fe48f578eca96ee23ffe684ba7c70"
+  }
+}

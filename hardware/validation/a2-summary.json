@@ -1,0 +1,20 @@
+{
+  "revision": "A2",
+  "date": "2026-09-21",
+  "ercErrors": 0,
+  "ercWarnings": 0,
+  "components": 22,
+  "nets": 18,
+  "checkedConnectedPins": 66,
+  "assignedFootprints": 14,
+  "pendingConnectorFootprints": 8,
+  "netlistMatchesModel": true,
+  "pcbCreated": false,
+  "fabricationReady": false,
+  "limitations": [
+    "Socket geometry not verified",
+    "Power-path and peripheral-current capacity not verified",
+    "Sensor, IR receiver and RF hardware not finalized",
+    "ERC uses passive external interfaces and cannot validate their voltage compatibility"
+  ]
+}
